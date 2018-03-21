@@ -1,0 +1,194 @@
+#+Title: Understanding Go STD
+#+Author: Philip Ye(phye8080@gmail.com)
+
+* Org Configs
+#+STARTUP: overview
+#+STARTUP: hidestars
+* net 
+** mac.go                                                                       :mac:
+*** Types
+**** [[file:/usr/local/go/src/net/mac.go::type%20HardwareAddr%20%5B%5Dbyte][HardwareAddr]]
+     HardwareAddr represents a physical address
+     
+     [[file:/usr/local/go/src/net/mac.go::func%20(a%20HardwareAddr)%20String()%20string%20{][String()]]
+     Convert internal physical addr to human readable
+
+     [[file:/usr/local/go/src/net/mac.go::func%20ParseMAC(s%20string)%20(hw%20HardwareAddr,%20err%20error)%20{][ParseMAC(s string)]]
+     Convert human readable MAC to internal byte slice based MAC
+     Note that normally MAC address are of 6 bytes, however, there're also [[file:/usr/local/go/src/net/mac.go::/%2001:23:45:67:89:ab:cd:ef][8 bytes]] and [[file:/usr/local/go/src/net/mac.go::/%2001:23:45:67:89:ab:cd:ef:00:00:01:23:45:67:89:ab:cd:ef:00:00][20 bytes]] MAC
+
+** ip.go
+*** Types
+**** [[file:/usr/local/go/src/net/ip.go::type%20IP%20\%5B%5Dbyte][IP]]                                                                         :ip:
+     IP is a single IP address, which can either by IPv4 or IPv6. 
+
+     [[file:/usr/local/go/src/net/ip.go::var%20v4InV6Prefix%20%3D%20%5B%5Dbyte{0,%200,%200,%200,%200,%200,%200,%200,%200,%200,%200xff,%200xff}][v4InV6Prefix (10 zeros, 2 0xFFs)]] 
+     Note that IPv4 can be converted to IPv6 address by adding a canonical
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20Equal(x%20IP)%20bool%20{][func (ip IP) Equal(x IP) bool {]]
+     Compare if two IP are equal (taking IPv4 and IPv6 comparison into consideration)
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20To4()%20IP%20{][func (ip IP) To4() IP {]]
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20To16()%20IP%20{][func (ip IP) To16() IP {]]
+     Two utils to convert IP to v4 or v6
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20Mask(mask%20IPMask)%20IP%20{][func (ip IP) Mask(mask IPMask) IP {]]
+     Return the result of masking the IP address ip with mask
+     
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20String()%20string%20{][func (ip IP) String() string {]]
+     Return the string form of the IP address ip:
+       - "<nil>", if ip has length 0
+       - dotted form, for an IPv4 address
+       - colon form: for IPv6
+       - hexadecimal form of IP, without punctuation, if no other cases apply
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(\%5B%5Dbyte,%20error)%20{][func (ip *IP) MarshalText()]]
+     Implements the encoding.TextMarshaler interface, *the encoding is the same as
+     returned by String*. 
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(ip%20*IP)%20UnmarshalText(text%20%5B%5Dbyte)%20error%20{][func (ip *IP) UnmarshalText(text {}byte) error]]
+     Implements the encoding.TextUnmarshaler interface, the IP address should be
+     in dot form (for v4) or colon form (for v6)
+
+**** [[file:/usr/local/go/src/net/ip.go::type%20IPMask%20\%5B%5Dbyte][IPMask]]                                                                     :ipmask:
+     [[file:/usr/local/go/src/net/ip.go::func%20(m%20IPMask)%20Size()%20(ones,%20bits%20int)%20{][func (m IPMask) Size() (ones, bits int) {]]
+     Return number of leading ones and total bits in the mask
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(m%20IPMask)%20String()%20string%20{][func (m IPMask) String() string {]]
+     Return the hexadecimal form of IP, without punctuation
+
+**** [[file:/usr/local/go/src/net/ip.go::type%20IPNet%20struct%20{][IPNet]]                                                                      :ipnet:
+     IPNet represents an IP network with IP and IPMask
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(n%20*IPNet)%20Contains(ip%20IP)%20bool%20{][func (n *IPNet) Contains(ip IP) bool {]]
+     Returns whether the network includes ip
+
+     [[file:/usr/local/go/src/net/ip.go::func%20(n%20*IPNet)%20String()%20string%20{][func (n *IPNet) String() string {]]
+     Returns the CIDR notation of n like "192.0.2.1/24", or "2001:db8::/48". Note
+     that if the network is not in the canonical form, it will return mask as
+     hexadecimal form without punctuation like "198.51.100.1/c000ff00"
+
+*** Functions 
+    [[file:/usr/local/go/src/net/ip.go::func%20CIDRMask(ones,%20bits%20int)%20IPMask%20{][CIDRMask]] returns an IPMask 
+
+    [[file:/usr/local/go/src/net/ip.go::func%20ParseIP(s%20string)%20IP%20{][func ParseIP(s string) IP {]]
+    Parse s as an IP address, returning the result. Support both IPv4 and IPv6.
+    
+    [[file:/usr/local/go/src/net/ip.go::func%20ParseCIDR(s%20string)%20(IP,%20*IPNet,%20error)%20{][func ParseCIDR(s string) (IP, *IPNet, error) {]]
+    Parses s as a CIDR notation IP address and prefix length, returns the IP
+    address and the network implied by the IP and prefix length. 
+
+**** TODO [[file:/usr/local/go/src/net/ip.go::func%20parseIPv6(s%20string,%20zoneAllowed%20bool)%20(ip%20IP,%20zone%20string)%20{][parseIPv6]]
+     Parse IPv6 address
+
+** lookup.go
+*** Variables
+    [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
+    A internal wait group to wait for all goroutines to finish
+    
+    [[file:/usr/local/go/src/net/lookup.go::var%20DefaultResolver%20%3D%20&Resolver{}][DefaultResolver]]
+    Default *package-level* Lookup functions and by Dialers without a specified
+    Resolver 
+    
+*** Types
+    [[file:/usr/local/go/src/net/lookup.go::type%20Resolver%20struct%20{][type Resolver struct {]]
+    A ~Resolver~ looks up names and numbers. 
+
+    #+begin_src go
+    type Resolver struct {
+        PreferGo bool
+        StrictErrors bool
+        Dial func(ctx context.Context, network, address string) (Conn, error)
+    }
+    #+end_src
+
+    Note that the ~Dial~ function optionally specifies an alternate dialer for
+    use by Go's built-in DNS resolver to make TCP and UDP connections to DNS
+    services. 
+    
+    [[file:/usr/local/go/src/net/lookup.go::func%20(r%20*Resolver)%20LookupHost(ctx%20context.Context,%20host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func (r *Resolver) LookupHost(ctx context.Context, hsot string) (addrs {}string, err error)]]
+    Looks up the given host using the local resolver, note that *either IP
+    address or hostname is supported* 
+
+*** Functions
+    [[file:/usr/local/go/src/net/lookup.go::func%20lookupProtocolMap(name%20string)%20(int,%20error)%20{][func lookupProtocolMap(name string) (int, error) {]]
+    Given protocol name, return protocol number
+    
+    [[file:/usr/local/go/src/net/lookup.go::func%20lookupPortMap(network,%20service%20string)%20(port%20int,%20error%20error)%20{][func lookupPortMap(network, service string) (port int, error error) {]]
+    Given network(tcp or udp) and service name(http, https .etc), return the
+    corresponding default port number
+
+    [[file:/usr/local/go/src/net/lookup.go::func%20LookupHost(host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func LookupHost(host string) (addrs {}string, err error)]]
+    looks up the given host using the local resolver. 
+
+    
+
+* context
+  ~Context~ type carries deadlines, cancelation signals, and other
+  request-scoped values across API boundaries and between processes. 
+
+** context.go
+
+*** Types
+
+    [[file:/usr/local/go/src/context/context.go::type%20Context%20interface%20{][type Context interface {]]
+    #+begin_src go
+    type Context interface {
+        Deadline() (deadline time.Time, ok bool)
+        Done() <-chan struct{}
+        Err() error
+        Value(key interface{}) interface{}
+    }
+    #+end_src
+    
+    ~Deadline~ returns the time when work done on behalf of this context
+    should be canceled. ~Deadline~ returns ok==false when no deadline is
+    set. Successive calls to ~Deadline~ return the same results. 
+
+    ~Done~ returns a channel that's closed when work don on behalf of this
+    context should be canceled. Done may return nil if this context can never be
+    canceled. Successive calls to Done return the same value.
+
+    If ~Done~ is not yet closed, ~Err~ returns nil. If ~Done~ is closed, ~Err~
+    returns a non-nil error explaining why: 
+      - Canceled if the context was canceled
+      - DeadlineExceeded if the context's deadline passed
+
+    ~Value~ returns the value associated with this context for key, or nil if no
+    value is associated with key. A key identifies a specific value in a
+    Context. *A key can be any type that supports equality.*
+
+
+    [[file:/usr/local/go/src/context/context.go::type%20emptyCtx%20int][type emptyCtx int]]
+    An emptyCtx is never canceled, has no values, and has no deadline. Note that
+    it is not struct{}, since vars of this type *must* have distinct addresses. 
+
+    [[file:/usr/local/go/src/context/context.go::type%20CancelFunc%20func()][type CancelFunc func()]]
+    A CancelFunc tells an operation to abandon its work. After the first call,
+    subsequent calls to a CancelFunc do nothing
+
+    [[file:/usr/local/go/src/context/context.go::type%20canceler%20interface%20{][type canceler interface {]]
+    A canceler is a context type that can be canceled directly. The
+    implementations are *cancelCtx and *timerCtx
+
+
+*** Variables
+    [[file:/usr/local/go/src/context/context.go::var%20Canceled%20%3D%20errors.New("context%20canceled")][Canceled]]
+    The error returned by ~Context.Err~ when the context is canceled
+
+    [[file:/usr/local/go/src/context/context.go::var%20DeadlineExceeded%20error%20%3D%20deadlineExceededError{}][DeadlineExceeded]]
+    The error returned by ~Context.Err~ when the context's deadline passes
+
+    [[file:/usr/local/go/src/context/context.go::todo%20%3D%20new(emptyCtx)][todo = new(emptyCtx)]]
+    The internal non-nil, empty Context
+    
+    [[file:/usr/local/go/src/context/context.go::background%20%3D%20new(emptyCtx)][background = new(emptyCtx)]]
+    The internal non-nil, empty Context named backgroud
+    
+
+*** Functions
+    [[file:/usr/local/go/src/context/context.go::func%20Background()%20Context%20{][func Background() Context {]]
+    Return the internal background empty Context
+
+    [[file:/usr/local/go/src/context/context.go::func%20TODO()%20Context%20{][func TODO() Context {]]
+    Return the internal todo empty Context
