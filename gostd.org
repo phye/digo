@@ -312,9 +312,39 @@
      use by Go's built-in DNS resolver to make TCP and UDP connections to DNS
      services. 
      
-**** [[file:/usr/local/go/src/net/lookup.go::func%20(r%20*Resolver)%20LookupHost(ctx%20context.Context,%20host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func (r *Resolver) LookupHost(ctx context.Context, hsot string) (addrs {}string, err error)]]
-     Looks up the given host using the local resolver, note that *either IP
-     address or hostname is supported* 
+***** [[file:/usr/local/go/src/net/lookup.go::func%20(r%20*Resolver)%20LookupHost(ctx%20context.Context,%20host%20string)%20(addrs%20\%5B%5Dstring,%20err%20error)%20{][func (r *Resolver) LookupHost(ctx context.Context, host string) (addrs {}string, err error)]]
+      Looks up the given host using the local resolver, note that *either IP
+      address or hostname is supported* 
+      
+      If host is IP address, return IP parsed directly. Otherwise, call platform
+      specific ~r.lookupHost~ to actually lookup the host
+
+***** [[file:/usr/local/go/src/net/lookup.go::func%20(r%20*Resolver)%20LookupIPAddr(ctx%20context.Context,%20host%20string)%20(%5B%5DIPAddr,%20error)%20{][func (r *Resolver) LookupIPAddr(ctx context.Context, host string) ({}IPAddr, error)]]
+      Looks up host using the local resolver. *either IP or hostname is
+      supported* 
+
+      Details:
+      - try to parse host as IP address. If successful, return IP address
+        directly
+      - If there're netrace variables in ~ctx~, call ~trace.DNSStart(host)~
+      - Add 1 in ~dnsWaitGroup~, 
+        [[dnsWaitGroup.Add(1)]]
+        [[file:/usr/local/go/src/net/lookup.go::var%20dnsWaitGroup%20sync.WaitGroup][var dnsWaitGroup sync.WaitGroup]]
+      - Then, start *only* one DNS request via ~loookupGroup.DoChan~, which is a
+        method defined in ~singleflight.Grop~. I.e., however many goroutines
+        there're that's trying to make DNS request, *only one* of them will
+        actually run, all other goroutines will just wait for the result and use
+        it when the result is ready.
+        [[file:/usr/local/go/src/net/lookup.go::ch,%20called%20:%3D%20lookupGroup.DoChan(host,%20func()%20(interface{},%20error)%20{][ch, called := lookupGroup.DoChan(host, func() (interface{}, error) {]]
+      - Then, blocks at ~select~ at channel, until either ~ctx.Done()~ channel
+        or result channel ~ch~ is readable. 
+
+        When ~ch~ is readable, i.e., DNS query returns successfully, returns the
+        slice of ~IPAddr~. 
+
+        When ~ctx.Done()~ is readable due to deadline exceeded, simply call
+        ~lookupGroup.Forget(host)~ so that further DNS query will continue to
+        start instead of wait
 
 *** Functions
 **** [[file:/usr/local/go/src/net/lookup.go::func%20lookupProtocolMap(name%20string)%20(int,%20error)%20{][func lookupProtocolMap(name string) (int, error) {]]
@@ -324,6 +354,9 @@
      Given network(tcp or udp) and service name(http, https .etc), return the
      corresponding default port number
 
+
 **** [[file:/usr/local/go/src/net/lookup.go::func%20LookupHost(host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func LookupHost(host string) (addrs {}string, err error)]]
-     looks up the given host using the local resolver. 
+     looks up the given host using the local default resolver. 
   
+**** [[file:/usr/local/go/src/net/lookup.go::func%20LookupIP(host%20string)%20(%5B%5DIP,%20error)%20{][func LookupIP(host string) ({}IP, error)]]
+     Looks up the given host's IP addresses 
