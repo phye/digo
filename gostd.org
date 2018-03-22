@@ -3,6 +3,212 @@
 #+STARTUP: overview
 #+STARTUP: hidestars
 
+* context
+  ~Context~ type carries deadlines, cancelation signals, and other
+  request-scoped values across API boundaries and between processes. 
+
+** context.go
+*** Variables
+**** [[file:/usr/local/go/src/context/context.go::var%20Canceled%20%3D%20errors.New("context%20canceled")][Canceled]]
+     The error returned by ~Context.Err~ when the context is canceled
+
+**** [[file:/usr/local/go/src/context/context.go::var%20DeadlineExceeded%20error%20%3D%20deadlineExceededError{}][DeadlineExceeded]]
+     The error returned by ~Context.Err~ when the context's deadline passes
+
+**** [[file:/usr/local/go/src/context/context.go::todo%20%3D%20new(emptyCtx)][todo = new(emptyCtx)]]
+     The internal non-nil, empty Context
+  
+**** [[file:/usr/local/go/src/context/context.go::background%20%3D%20new(emptyCtx)][background = new(emptyCtx)]]
+     The internal non-nil, empty Context named backgroud
+
+*** Types
+**** [[file:/usr/local/go/src/context/context.go::type%20emptyCtx%20int][type emptyCtx int]]
+     An emptyCtx is never canceled, has no values, and has no deadline. Note that
+     it is not struct{}, since vars of this type *must* have distinct addresses. 
+
+     emptyCtx implements the following (empty) methods required by Context
+
+     [[file:/usr/local/go/src/context/context.go::func%20(*emptyCtx)%20Deadline()%20(deadline%20time.Time,%20ok%20bool)%20{][func (*emptyCtx) Deadline() (deadline time.Time, ok bool) {]]
+     [[file:/usr/local/go/src/context/context.go::func%20(*emptyCtx)%20Done()%20<-chan%20struct{}%20{][func (*emptyCtx) Done() <-chan struct{} {]]
+     [[file:/usr/local/go/src/context/context.go::func%20(*emptyCtx)%20Err()%20error%20{][func (*emptyCtx) Err() error {]]
+     [[file:/usr/local/go/src/context/context.go::func%20(*emptyCtx)%20Value(key%20interface{})%20interface{}%20{][func (*emptyCtx) Value(key interface{}) interface{} {]]
+
+**** [[file:/usr/local/go/src/context/context.go::type%20canceler%20interface%20{][type canceler interface {]]
+     #+begin_src go
+     type canceler interface {
+         cancel(removeFromParent bool, err error)
+         Done() <- chan struct{}
+     }
+     #+end_src
+     A canceler is a context type that can be canceled directly. The
+     implementations are ~*cancelCtx~ and ~*timerCtx~
+
+**** [[file:/usr/local/go/src/context/context.go::type%20cancelCtx%20struct%20{][type cancelCtx struct {]]
+     #+begin_src go
+     type cancelCtx struct {
+         Context                     // Note that, cancelCtx is a struct, not interface :)
+
+         mu sync.Mutex
+         done chan struct{}
+         children map[canceler]struct{}
+         err error
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*cancelCtx)%20Done()%20<-chan%20struct{}%20{][func (c *cancelCtx) Done() <-chan struct{} {]]
+      *atomically* make a ~chan struct{}~ and return it. Note that calling
+      ~cancelCtx.Done~ will override ~cancelCtx.Context.Done~. 
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*cancelCtx)%20Err()%20error%20{][func (c *cancelCtx) Err() error {]]
+      *atomically* return c.err. Also override ~cnacelCtx.Context.Err~ 
+
+***** Puzzles
+      Why ~Deadline()~ and ~Value()~ are not implemented? 
+      Since they're implemented in ~canCtx.Context~. 
+
+      Note that cancelCtx is a struct, not an interface :) Thus the
+      corresponding methods in ~canCtx.Context~ is sufficient.
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*cancelCtx)%20cancel(removeFromParent%20bool,%20err%20error)%20{][func (c *cancelCtx) cancel(removeFromParent bool, err error) {]]
+      *Atomically* closes c.done, then cancels each of c's children. And if
+      ~removeFromParent~ is true, removes c from its parent's ~children~ map
+      
+**** [[file:/usr/local/go/src/context/context.go::type%20timerCtx%20struct%20{][type timerCtx struct {]]
+     #+begin_src go
+     type timerCtx struct {
+         cancelCtx
+         timer *time.Timer // Under cancelCtx.mu.
+
+         deadline time.Time
+     }
+     #+end_src
+
+     A timerCtx *contains* a cancelCtx (which evetually contains a Context), but
+     overrides the ~Context~'s Deadline() method
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*timerCtx)%20Deadline()%20(deadline%20time.Time,%20ok%20bool)%20{][/usr/local/go/src/context/context.go::func (c *timerCtx) Deadline() (deadline time.Time, ok bool) {]]
+      Simpler getter to return deadline
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*timerCtx)%20cancel(removeFromParent%20bool,%20err%20error)%20{][func (c *timerCtx) cancel(removeFromParent bool, err error) {]]
+      Cancel the timerCtx and stop the timer
+      - Cancel the inner cancelCtx first
+      - Then, remove the context itself from the parent cancelCtx if
+        ~removeFromParent~ is true
+      - Lastly, stop timer atomically
+
+**** [[file:/usr/local/go/src/context/context.go::type%20valueCtx%20struct%20{][type valueCtx struct {]]
+     #+begin_src go
+     type valueCtx struct {
+         Context
+         key, val interface{}
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/context/context.go::func%20(c%20*valueCtx)%20Value(key%20interface{})%20interface{}%20{][func (c *valueCtx) Value(key interface{}) interface{} {]]
+      Return value that matches with key
+
+
+**** [[file:/usr/local/go/src/context/context.go::type%20Context%20interface%20{][type Context interface {]]
+     #+begin_src go
+     type Context interface {
+         Deadline() (deadline time.Time, ok bool)
+         Done() <-chan struct{}
+         Err() error
+         Value(key interface{}) interface{}
+     }
+     #+end_src
+     
+     ~Deadline~ returns the time when work done on behalf of this context
+     should be canceled. ~Deadline~ returns ok==false when no deadline is
+     set. Successive calls to ~Deadline~ return the same results. 
+     
+     ~Done~ returns a channel that's closed when work don on behalf of this
+     context should be canceled. Done may return nil if this context can never be
+     canceled. Successive calls to Done return the same value.
+     
+     If ~Done~ is not yet closed, ~Err~ returns nil. If ~Done~ is closed, ~Err~
+     returns a non-nil error explaining why: 
+
+       - Canceled if the context was canceled
+       - DeadlineExceeded if the context's deadline passed
+       
+     ~Value~ returns the value associated with this context for key, or nil if no
+     value is associated with key. A key identifies a specific value in a
+     Context. *A key can be any type that supports equality.*
+
+**** [[file:/usr/local/go/src/context/context.go::type%20CancelFunc%20func()][type CancelFunc func()]]
+     A CancelFunc tells an operation to abandon its work. After the first call,
+     subsequent calls to a CancelFunc do nothing
+     
+*** Functions
+**** [[file:/usr/local/go/src/context/context.go::func%20removeChild(parent%20Context,%20child%20canceler)%20{][func removeChild(parent Context, child canceler) {]]
+     Remove ~child~ from ~parent~ context
+
+**** [[file:/usr/local/go/src/context/context.go::func%20newCancelCtx(parent%20Context)%20cancelCtx%20{][func newCancelCtx(parent Context) cancelCtx {]]
+     Return a new ~cancelCtx~ where ~parent~ is passed as the ~Context~ 
+
+**** [[file:/usr/local/go/src/context/context.go::func%20parentCancelCtx(parent%20Context)%20(*cancelCtx,%20bool)%20{][func parentCancelCtx(parent Context) (*cancelCtx, bool) {]]
+     Follows a chain of parent references until it finds a *cancelCtx. This
+     function iterate over all the concrete ~Context~ types in the =context=
+     package
+
+**** [[file:/usr/local/go/src/context/context.go::func%20propagateCancel(parent%20Context,%20child%20canceler)%20{][func propagateCancel(parent Context, child canceler) {]]
+     Summary: Arranges for child to be canceled when parent is. 
+     1. If parent will never be canceled, return directly
+
+     2. Otherwise, try to find the *nearest* parent ~cancelCtx~
+        - If such one is found
+          - Already canceled? 
+            cancel child directly
+          - Not canceled yet
+            Insert child into parent ~cancelCtx~'s /children/ map *atomically*
+        - Otherwise, do not have a parent cancelCtx
+          Start a go routine to wait on parent's cancel channel and child's
+          cancel channel
+          - If parent is canceled, continue to cancel child
+          - If child is canceld, nothing to do
+
+            
+**** [[file:/usr/local/go/src/context/context.go::func%20Background()%20Context%20{][func Background() Context {]]
+     Return the internal background empty Context
+
+**** [[file:/usr/local/go/src/context/context.go::func%20TODO()%20Context%20{][func TODO() Context {]]
+     Return the internal todo empty Context
+
+**** [[file:/usr/local/go/src/context/context.go::func%20WithCancel(parent%20Context)%20(ctx%20Context,%20cancel%20CancelFunc)%20{][func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {]]
+     WithCancel returns a copy of parent with a new Done channel. The returned
+     context's Done channel is closed when the returned cancel function is
+     called or when the parent context's Done channel is closed, whichever
+     happens first. 
+
+**** [[file:/usr/local/go/src/context/context.go::func%20WithDeadline(parent%20Context,%20d%20time.Time)%20(Context,%20CancelFunc)%20{][func WithDeadline(parent Context, d time.Time) (Context, CancelFunc) {]]
+     Summary: Returns a copy of the parent context with the deadline adjusted to
+     be no later than d. The returned context's Done channel is closed *1)* when
+     the deadline expires, *2)* when the returned cancel function is called, or
+     *3)* when the parent context's Done channel is closed, whichever happens
+     first.  
+
+     - check if the parent's deadline is before myself; if yes, return
+       cancelCtx with parent
+     - Otherwise, create a new timerCtx with a new cancelCtx after parent and
+       the deadline ~d~
+     - Then, insert the new timerCtx into parent's children map
+     - Then, check if the timer already expires
+       - If yes 
+         - cancel the newly created timerCtx directly
+         - return the newly created timerCtx
+       - Otherwise,
+         - start a timer *atomically* with a callback to cancel the timerCtx
+           after timer expires
+         - Lastly, return the timerCtx and a new CancelFunc
+
+**** [[file:/usr/local/go/src/context/context.go::func%20WithTimeout(parent%20Context,%20timeout%20time.Duration)%20(Context,%20CancelFunc)%20{][func WithTimeout(parent Context, timeout time.Duration) (Context, CancelFunc) {]]
+     Simple wrapper over WithDeadline for easy use
+
+**** [[file:/usr/local/go/src/context/context.go::func%20WithValue(parent%20Context,%20key,%20val%20interface{})%20Context%20{][func WithValue(parent Context, key, val interface{}) Context {]]
+     Return a new ValueCtx with key and val set. Note that ~key~ must be
+     comparable and should not be of type string or other built-in type to avoid
+     collisions between packages using context. 
 * net 
 ** mac.go                                                                       :mac:
 *** Types
@@ -121,72 +327,3 @@
 **** [[file:/usr/local/go/src/net/lookup.go::func%20LookupHost(host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func LookupHost(host string) (addrs {}string, err error)]]
      looks up the given host using the local resolver. 
   
-* context
-  ~Context~ type carries deadlines, cancelation signals, and other
-  request-scoped values across API boundaries and between processes. 
-
-** context.go
-
-*** Types
-
-**** [[file:/usr/local/go/src/context/context.go::type%20Context%20interface%20{][type Context interface {]]
-     #+begin_src go
-     type Context interface {
-         Deadline() (deadline time.Time, ok bool)
-         Done() <-chan struct{}
-         Err() error
-         Value(key interface{}) interface{}
-     }
-     #+end_src
-     
-     ~Deadline~ returns the time when work done on behalf of this context
-     should be canceled. ~Deadline~ returns ok==false when no deadline is
-     set. Successive calls to ~Deadline~ return the same results. 
-     
-     ~Done~ returns a channel that's closed when work don on behalf of this
-     context should be canceled. Done may return nil if this context can never be
-     canceled. Successive calls to Done return the same value.
-     
-     If ~Done~ is not yet closed, ~Err~ returns nil. If ~Done~ is closed, ~Err~
-     returns a non-nil error explaining why: 
-
-       - Canceled if the context was canceled
-       - DeadlineExceeded if the context's deadline passed
-       
-     ~Value~ returns the value associated with this context for key, or nil if no
-     value is associated with key. A key identifies a specific value in a
-     Context. *A key can be any type that supports equality.*
-
-**** [[file:/usr/local/go/src/context/context.go::type%20emptyCtx%20int][type emptyCtx int]]
-     An emptyCtx is never canceled, has no values, and has no deadline. Note that
-     it is not struct{}, since vars of this type *must* have distinct addresses. 
-
-**** [[file:/usr/local/go/src/context/context.go::type%20CancelFunc%20func()][type CancelFunc func()]]
-     A CancelFunc tells an operation to abandon its work. After the first call,
-     subsequent calls to a CancelFunc do nothing
-
-**** [[file:/usr/local/go/src/context/context.go::type%20canceler%20interface%20{][type canceler interface {]]
-     A canceler is a context type that can be canceled directly. The
-     implementations are *cancelCtx and *timerCtx
-     
-
-*** Variables
-**** [[file:/usr/local/go/src/context/context.go::var%20Canceled%20%3D%20errors.New("context%20canceled")][Canceled]]
-     The error returned by ~Context.Err~ when the context is canceled
-
-**** [[file:/usr/local/go/src/context/context.go::var%20DeadlineExceeded%20error%20%3D%20deadlineExceededError{}][DeadlineExceeded]]
-     The error returned by ~Context.Err~ when the context's deadline passes
-
-**** [[file:/usr/local/go/src/context/context.go::todo%20%3D%20new(emptyCtx)][todo = new(emptyCtx)]]
-     The internal non-nil, empty Context
-  
-**** [[file:/usr/local/go/src/context/context.go::background%20%3D%20new(emptyCtx)][background = new(emptyCtx)]]
-     The internal non-nil, empty Context named backgroud
- 
-
-*** Functions
-**** [[file:/usr/local/go/src/context/context.go::func%20Background()%20Context%20{][func Background() Context {]]
-     Return the internal background empty Context
-
-**** [[file:/usr/local/go/src/context/context.go::func%20TODO()%20Context%20{][func TODO() Context {]]
-     Return the internal todo empty Context
