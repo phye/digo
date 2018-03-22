@@ -346,6 +346,22 @@
         ~lookupGroup.Forget(host)~ so that further DNS query will continue to
         start instead of wait
 
+***** [[file:/usr/local/go/src/net/lookup.go::func%20(r%20*Resolver)%20LookupPort(ctx%20context.Context,%20network,%20service%20string)%20(port%20int,%20err%20error)%20{][func (r *Resolver) LookupPort(ctx context.Context, network, service string) (port int, err error) {]]
+      Looks up the port for the given network and service
+
+      Details:
+      - Try to parse service as a number. 
+        - If ~service~ is indeed a number, return the port no. directly.
+        - Otherwise, call platform dependent ~Resolver.lookupPort~ to lookup the
+          port no. and return it
+
+***** Other methods omitted
+      ~LookupCNAME~, ~LookupSRV~, ~LookupMX~, ~LookupNS~, ~LookupTXT~ are all simple
+      wrappers over platform-dependent corresponding logic
+
+      Pay special attention to ~LookupAddr~ method which performs reverse DNS
+      lookup. 
+
 *** Functions
 **** [[file:/usr/local/go/src/net/lookup.go::func%20lookupProtocolMap(name%20string)%20(int,%20error)%20{][func lookupProtocolMap(name string) (int, error) {]]
      Given protocol name, return protocol number
@@ -354,9 +370,19 @@
      Given network(tcp or udp) and service name(http, https .etc), return the
      corresponding default port number
 
-
+     
 **** [[file:/usr/local/go/src/net/lookup.go::func%20LookupHost(host%20string)%20(addrs%20%5B%5Dstring,%20err%20error)%20{][func LookupHost(host string) (addrs {}string, err error)]]
      looks up the given host using the local default resolver. 
   
 **** [[file:/usr/local/go/src/net/lookup.go::func%20LookupIP(host%20string)%20(%5B%5DIP,%20error)%20{][func LookupIP(host string) ({}IP, error)]]
      Looks up the given host's IP addresses 
+
+**** [[file:/usr/local/go/src/net/lookup.go::func%20LookupPort(network,%20service%20string)%20(port%20int,%20err%20error)%20{][func LookupPort(network, service string) (port int, err error) {]]
+     Given network and service, return the port no. 
+
+     A simple wrapper of ~Resolver.LookupPort~ 
+
+     Note that the Port lookup uses ~Background~ context which will never be
+     canceled. 
+     [[file:/usr/local/go/src/net/lookup.go::return%20DefaultResolver.LookupPort(context.Background(),%20network,%20service)][return DefaultResolver.LookupPort(context.Background(), network, service)]]
+**** Other simple functions omitted
