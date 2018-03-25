@@ -287,6 +287,180 @@
 **** TODO [[file:/usr/local/go/src/net/ip.go::func%20parseIPv6(s%20string,%20zoneAllowed%20bool)%20(ip%20IP,%20zone%20string)%20{][parseIPv6]]
      Parse IPv6 address
 
+** net.go
+   
+*** Variables
+**** [[file:/usr/local/go/src/net/net.go::var%20listenerBacklog%20%3D%20maxListenerBacklog()][var listenerBacklog = maxListenerBacklog()]]
+    On Linux, return parsed info from =/proc/sys/net/core/somaxconn=
+
+**** [[file:/usr/local/go/src/net/net.go::var%20threadLimit%20%3D%20make(chan%20struct{},%20500)][var threadLimit = make(chan struct{}, 500)]]
+     Limit the number of cgo threads 
+
+**** DONE Puzzle
+     CLOSED: [2018-03-25 Sun 09:34]
+     - State "DONE"       from "TODO"       [2018-03-25 Sun 09:34]
+     Why there're two underscore variables ??
+
+     #+begin_src go
+     var (
+         _ io.WriterTo = (*Buffers)(nil)
+         _ io.Reader   = (*Buffers)(nil)
+     )
+     #+end_src
+
+     Per [[https://golang.org/doc/effective_go.html#blank][effective go]], the blank identifiers above indicates that *the
+     declaration exists only for the type checking, not to create a variable*. 
+
+*** Types
+**** [[file:/usr/local/go/src/net/net.go::type%20conn%20struct%20{][type conn struct {]]
+     type ~conn~ is a simple wrapper over netFD, whose /internal/ implementation
+     is platform dependent. 
+
+     ~conn~ is a ~Conn~, with additional two methods for buffer SETTER. 
+     
+     #+begin_src go
+     type conn struct {
+         fd *netFD
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20ok()%20bool%20{%20return%20c%20!%3D%20nil%20&&%20c.fd%20!%3D%20nil%20}][func (c *conn) ok() bool { return c != nil && c.fd != nil }]]
+      Self-Explanatory
+
+***** [[file:/usr/local/go/src/net/lookup_unix.go::func%20lookupProtocol(_%20context.Context,%20name%20string)%20(int,%20error)%20{][func (c *conn) Read(b {}byte) (int, error)]]
+      Implements the Conn Read method which is done via ~conn.fd.Read~ 
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20Write(b%20%5B%5Dbyte)%20(int,%20error)%20{][func (c *conn) Write(b {}byte) (int, error)]]
+      Implements the Conn Write method which is done via ~conn.fd.Write~ 
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20Close()%20error%20{][func (c *conn) Close() error {]]
+      Closes the connection (required by ~Conn~)
+
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20LocalAddr()%20Addr%20{][func (c *conn) LocalAddr() Addr {]]
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20RemoteAddr()%20Addr%20{][func (c *conn) RemoteAddr() Addr {]]
+      Simple wrappers over ~*netFD.fd~ fields. Required by ~Conn~ interface
+
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20SetDeadline(t%20time.Time)%20error%20{][func (c *conn) SetDeadline(t time.Time) error {]]
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20SetReadDeadline(t%20time.Time)%20error%20{][func (c *conn) SetReadDeadline(t time.Time) error {]]
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20SetWriteDeadline(t%20time.Time)%20error%20{][func (c *conn) SetWriteDeadline(t time.Time) error {]]
+      Wrappers over ~*netFD.fd.pdf~ methods. Required by ~Conn~ interface
+
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20SetReadBuffer(bytes%20int)%20error%20{][func (c *conn) SetReadBuffer(bytes int) error {]]
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20SetWriteBuffer(bytes%20int)%20error%20{][func (c *conn) SetWriteBuffer(bytes int) error {]]
+      Simple Wrapper over ~setReadBuffer~ and ~setWriteBuffer~ 
+
+***** [[file:/usr/local/go/src/net/net.go::func%20(c%20*conn)%20File()%20(f%20*os.File,%20err%20error)%20{][func (c *conn) File() (f *os.File, err error) {]]
+      Per comments, *sets the underlying os.File to blocking mode* and returns a
+      copy ~f~, which is independent of ~c~. 
+
+      Note that the setting blocking is done in ~*netFD.fd.dup()~ 
+
+**** [[file:/usr/local/go/src/net/net.go::type%20Addr%20interface%20{][type Addr interface {]]
+     An interface that represents a network end point address
+
+     #+begin_src go
+     type Addr interface {
+         Network() string // name of the network (for example, "tcp", "udp")
+         String() string  // string form of address (for example, "192.0.2.1:25", "[2001:db8::1]:80")
+     }
+     #+end_src
+
+**** [[file:/usr/local/go/src/net/net.go::type%20Conn%20interface%20{][type Conn interface {]] 
+     An interface indicating a generic *stream-oriented* network
+     connection. Multiple goroutines may invoke methods on a Conn simultaneously 
+
+     #+begin_src go
+     type Conn interface {
+         Read(b []byte) (n int, err error)
+         Write(b []byte) (n int, err error)
+         Close() error
+
+         LocalAddr() Addr
+         RemoteAddr() Addr
+
+         SetDeadline(t time.Time) error
+         SetReadDeadline(t time.Time) error
+         SetWriteDeadline(t time.Time) error
+     }
+     #+end_src
+
+     A Conn's interface can be divided into three parts:
+       - IO related,
+       - Address info related
+       - Timeout related
+
+**** [[file:/usr/local/go/src/net/net.go::type%20PacketConn%20interface%20{][type PacketCone interface {]]
+     A generic packet-oriented network connection. Multiple goroutines may
+     invoke methods on a PacketConn simultaneously  
+
+     #+begin_src go
+     type PacketConn interface {
+         ReadFrom(b []byte) (n int, addr Addr, err error)
+         WriteTo(b []byte, addr Addr) (n int, err error)
+         Close() error
+
+         LocalAddr() Addr
+
+         SetDeadline(t time.Time) error
+         SetReadDeadline(t time.Time) error
+         SetWriteDeadline(t time.Time) error
+     }
+     #+end_src
+
+**** [[file:/usr/local/go/src/net/net.go::type%20Listener%20interface%20{][type Listener interface {]]
+     A generic network listener for stream-oriented protocols. Multiple
+     goroutines may invoke methods on a Listener simultaneously. 
+
+     #+begin_src go
+     type Listener interface {
+         // Accept waits for and returns the next connection to the listener.
+         Accept() (Conn, error)
+
+         // Close closes the listener.
+         // Any blocked Accept operations will be unblocked and return errors.
+         Close() error
+
+         // Addr returns the listener's network address.
+         Addr() Addr
+     }
+     #+end_src
+
+**** [[file:/usr/local/go/src/net/net.go::type%20Error%20interface%20{][type Error interface {]]
+     Embeds ~error~ interface with two additional methods: ~Timeout~ and
+     ~Temporary~ 
+
+**** [[file:/usr/local/go/src/net/net.go::type%20OpError%20struct%20{][type OpError struct {]]
+     An error describes the operation, network type, and address of an error. 
+**** [[file:/usr/local/go/src/net/net.go::type%20ParseError%20struct%20{][type ParseError struct {]]
+     Error type of literal network address parsers
+**** [[file:/usr/local/go/src/net/net.go::type%20AddrError%20struct%20{][type AddrError struct {]]
+     Address error
+**** [[file:/usr/local/go/src/net/net.go::type%20DNSConfigError%20struct%20{][type DNSConfigError struct {]]
+**** [[file:/usr/local/go/src/net/net.go::type%20InvalidAddrError%20string][fype InvalidAddrError string]]
+**** [[file:/usr/local/go/src/net/net.go::type%20UnknownNetworkError%20string][type UnknownNetworkError string]]
+**** [[file:/usr/local/go/src/net/net.go::type%20DNSError%20struct%20{][type DNSError struct {]]
+**** [[file:/usr/local/go/src/net/net.go::type%20buffersWriter%20interface%20{][type buffersWriter interface {]]
+
+     #+begin_src go
+     type buffersWriter interface {
+         writeBuffers(*Buffers) (int64, error)
+     }
+     #+end_src
+     
+     ~buffersWriter~ is the *interface* implemented by Conns that support a
+     "writev"-like batch write optimization. ~writerBuffers~ should fully consume
+     all chunks from the provided Buffers, else it should report a non-nil
+     error. 
+
+**** [[file:/usr/local/go/src/net/net.go::func%20acquireThread()%20{][type Buffers {}{}byte]]
+***** [[file:/usr/local/go/src/net/net.go::func%20(v%20*Buffers)%20WriteTo(w%20io.Writer)%20(n%20int64,%20err%20error)%20{][func (v *Buffers) WriteTo(w io.Writer) (n int64, err error) {]]
+      Implements the ~WriteTo~ method required by ~io.WriterTo~ which will write
+      all bytes to a writer until no more data to write or when an error occurs
+***** [[file:/usr/local/go/src/net/net.go::func%20(v%20*Buffers)%20Read(p%20%5B%5Dbyte)%20(n%20int,%20err%20error)%20{][func (v *Buffers) Read(p {}byte) (n int, err error)]]
+      a simple buffer read method
+
+*** Functions
+**** [[file:/usr/local/go/src/net/net.go::func%20acquireThread()%20{][func acquireThread() {]]
+     Send message to ~threadLimit~ chan (which is a buffered chan of 500 slots) 
+**** [[file:/usr/local/go/src/net/net.go::func%20releaseThread()%20{][func releaseThread() {]]
 ** lookup.go
 *** Variables
 **** [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
