@@ -461,6 +461,10 @@
      Send message to ~threadLimit~ chan (which is a buffered chan of 500 slots) 
 **** [[file:/usr/local/go/src/net/net.go::func%20releaseThread()%20{][func releaseThread() {]]
 ** fd_unix.go
+   Defines types and functions representing socket-backended open file
+   descriptors. Note that/http all socket operations are achieved via
+   methods defined in ~internal/poll~
+
 *** Types
 **** [[file:/usr/local/go/src/net/fd_unix.go::type%20netFD%20struct%20{][type netFD struct {]]
      #+begin_src go
@@ -569,6 +573,64 @@
      /family/: PF_INET, PF_LOCAL, PF_UNIX .etc
      /sotype/: socket type, i.e., SOCK_STREAM, SOCK_DGRAM .etc
      /net/: Network string
+
+** file.go
+   Defines functions for getting /Conn/, /PacketConn/, and /Listner/ from an
+   open file descriptor ~*os.File~
+
+*** Types
+**** [[file:/usr/local/go/src/net/file.go::type%20fileAddr%20string][type fileAddr string]]
+***** [[file:/usr/local/go/src/net/file.go::func%20(fileAddr)%20Network()%20string%20{%20return%20"file%2Bnet"%20}][func (fileAddr) Network() string { return "file+net" }]]
+***** [[file:/usr/local/go/src/net/file.go::func%20(f%20fileAddr)%20String()%20string%20{%20return%20string(f)%20}][func (f fileAddr) String() string { return string(f) }]]
+      Methods requierd by ~Addr~ interface
+
+*** Functions
+**** [[file:/usr/local/go/src/net/file.go::func%20FileConn(f%20*os.File)%20(c%20Conn,%20err%20error)%20{][func FileConn(f *os.File) (c Conn, err error) {]]
+     Return a Conn given an *os.File (which represents an open file descriptor)
+     by wrapping platform dependent ~fileConn~ function
+     
+**** [[file:/usr/local/go/src/net/file.go::func%20FileListener(f%20*os.File)%20(ln%20Listener,%20err%20error)%20{][func FileListener(f *os.File) (ln Listener, err error) {]]
+     Returns a copy of the network listener corresponding to the open file
+     descriptor /f/. 
+     
+**** [[file:/usr/local/go/src/net/file.go::func%20FilePacketConn(f%20*os.File)%20(c%20PacketConn,%20err%20error)%20{][func FilePacketConn(f *os.File) (c PacketConn, err error) {]]
+     Return a copy of the packet network connection corresponding to the open
+     file descriptor /f/.
+
+** file_unix.go
+   Defines the actual logic to convert *os.File -> *netFD -> {Conn, Listener and
+   PacketConn}
+
+*** Functions
+**** [[file:/usr/local/go/src/net/file_unix.go::func%20dupSocket(f%20*os.File)%20(int,%20error)%20{][func dupSocket(f *os.File) (int, error) {]]
+     dup f.FD() with CloseOnExec flag, and set the dupped socket fd as
+     *NONBLOCKING* (which will make the f as nonblocking as well)
+
+**** [[file:/usr/local/go/src/net/file_unix.go::func%20newFileFD(f%20*os.File)%20(*netFD,%20error)%20{][func newFileFD(f *os.File) (*netFD, error) {]]
+     Create a new ~netFD~ and init it
+     
+     Firstly, dup /f/ via ~dupSocket~ to get a new fd /s/ and set the
+     NONBLOCKING flag
+     
+     Then, create a new *netFD via ~newFD~, init it and update other fields per
+     info from the open socket /s/
+
+**** [[file:/usr/local/go/src/net/file_unix.go::func%20fileConn(f%20*os.File)%20(Conn,%20error)%20{][func fileConn(f *os.File) (Conn, error) {]]
+     Given an open file descriptor /f/, return the corresponding ~Conn~ 
+
+     Supported Conns are: TCP, UDP, IP and UDS (Unix Domain Socket)
+
+     Firsly, create a new *netFD /fd/ via ~newFileFD~ 
+     Then, return corresponding Conn based on ~fd.laddr.(type)~ 
+
+**** [[file:/usr/local/go/src/net/file_unix.go::func%20fileListener(f%20*os.File)%20(Listener,%20error)%20{][func fileListener(f *os.File) (Listener, error) {]]
+     Given an open file descriptor /f/, return the corresponding ~Listener~
+
+     Supported Listeners: TCP and UDS
+
+**** [[file:/usr/local/go/src/net/file_unix.go::func%20filePacketConn(f%20*os.File)%20(PacketConn,%20error)%20{][func filePacketConn(f *os.File) (PacketConn, error) {]]
+     Given an open file descriptor /f/, return the corresponding ~PacketConn~ 
+
 ** DONE ipsock.go
    CLOSED: [2018-03-26 Mon 08:24]
    - State "DONE"       from "TODO"       [2018-03-26 Mon 08:24]
