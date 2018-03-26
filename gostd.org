@@ -288,29 +288,6 @@
      Parse IPv6 address
 
 ** net.go
-   
-*** Variables
-**** [[file:/usr/local/go/src/net/net.go::var%20listenerBacklog%20%3D%20maxListenerBacklog()][var listenerBacklog = maxListenerBacklog()]]
-    On Linux, return parsed info from =/proc/sys/net/core/somaxconn=
-
-**** [[file:/usr/local/go/src/net/net.go::var%20threadLimit%20%3D%20make(chan%20struct{},%20500)][var threadLimit = make(chan struct{}, 500)]]
-     Limit the number of cgo threads 
-
-**** DONE Puzzle
-     CLOSED: [2018-03-25 Sun 09:34]
-     - State "DONE"       from "TODO"       [2018-03-25 Sun 09:34]
-     Why there're two underscore variables ??
-
-     #+begin_src go
-     var (
-         _ io.WriterTo = (*Buffers)(nil)
-         _ io.Reader   = (*Buffers)(nil)
-     )
-     #+end_src
-
-     Per [[https://golang.org/doc/effective_go.html#blank][effective go]], the blank identifiers above indicates that *the
-     declaration exists only for the type checking, not to create a variable*. 
-
 *** Types
 **** [[file:/usr/local/go/src/net/net.go::type%20conn%20struct%20{][type conn struct {]]
      type ~conn~ is a simple wrapper over netFD, whose /internal/ implementation
@@ -456,6 +433,28 @@
       all bytes to a writer until no more data to write or when an error occurs
 ***** [[file:/usr/local/go/src/net/net.go::func%20(v%20*Buffers)%20Read(p%20%5B%5Dbyte)%20(n%20int,%20err%20error)%20{][func (v *Buffers) Read(p {}byte) (n int, err error)]]
       a simple buffer read method
+
+*** Variables
+**** [[file:/usr/local/go/src/net/net.go::var%20listenerBacklog%20%3D%20maxListenerBacklog()][var listenerBacklog = maxListenerBacklog()]]
+    On Linux, return parsed info from =/proc/sys/net/core/somaxconn=
+
+**** [[file:/usr/local/go/src/net/net.go::var%20threadLimit%20%3D%20make(chan%20struct{},%20500)][var threadLimit = make(chan struct{}, 500)]]
+     Limit the number of cgo threads 
+
+**** DONE Puzzle
+     CLOSED: [2018-03-25 Sun 09:34]
+     - State "DONE"       from "TODO"       [2018-03-25 Sun 09:34]
+     Why there're two underscore variables ??
+
+     #+begin_src go
+     var (
+         _ io.WriterTo = (*Buffers)(nil)
+         _ io.Reader   = (*Buffers)(nil)
+     )
+     #+end_src
+
+     Per [[https://golang.org/doc/effective_go.html#blank][effective go]], the blank identifiers above indicates that *the
+     declaration exists only for the type checking, not to create a variable*. 
 
 *** Functions
 **** [[file:/usr/local/go/src/net/net.go::func%20acquireThread()%20{][func acquireThread() {]]
