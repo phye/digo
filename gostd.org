@@ -751,6 +751,26 @@
 **** [[file:/usr/local/go/src/net/ipsock.go::func%20loopbackIP(net%20string)%20IP%20{][func loopbackIP(net string) IP {]]
      Return an IPv6 or IPv4 loopback IP address
 
+** ipsock_posix.go
+*** Types
+**** type ipStackCapabilities
+***** [[file:/usr/local/go/src/net/ipsock_posix.go::func%20(p%20*ipStackCapabilities)%20probe()%20{][func (p *ipStackCapabilities) probe() {]]
+      Probe kernel for IPv4, IPv6 and IPv4-mapped IPv6 capabilities
+
+*** Functions
+**** [[file:/usr/local/go/src/net/ipsock_posix.go::func%20favoriteAddrFamily(network%20string,%20laddr,%20raddr%20sockaddr,%20mode%20string)%20(family%20int,%20ipv6only%20bool)%20{][func favoriteAddrFamily(network string, laddr, raddr sockaddr, mode string) (family int, ipv6only bool) {]]
+     Return favorite addr family (which is either AF_INET or AF_INET6) and
+     whether ipv6only
+
+**** [[file:/usr/local/go/src/net/ipsock_posix.go::func%20internetSocket(ctx%20context.Context,%20net%20string,%20laddr,%20raddr%20sockaddr,%20sotype,%20proto%20int,%20mode%20string)%20(fd%20*netFD,%20err%20error)%20{][func internetSocket(ctx context.Context, net string, laddr, raddr sockaddr, sotype, proto int, mode string) (fd *netFD, err error) {]]
+     Return *netFD for network file descriptor
+
+     1. Firstly get the favorite addr family
+     2. Return socket via ~net.socket~ defined in ~sock_posix.go~
+
+**** [[file:/usr/local/go/src/net/ipsock_posix.go::func%20ipToSockaddr(family%20int,%20ip%20IP,%20port%20int,%20zone%20string)%20(syscall.Sockaddr,%20error)%20{][func ipToSockaddr(family int, ip IP, port int, zone string) (syscall.Sockaddr, error) {]]
+     Convert ip and port into ~syscall.Sockaddr~
+     
 ** rawconn.go
 *** Types
 **** [[file:/usr/local/go/src/net/rawconn.go::type%20rawConn%20struct%20{][type rawConn struct {]]
