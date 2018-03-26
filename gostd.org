@@ -492,7 +492,7 @@
 
 ***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20init()%20error%20{][func (fd *netFD) init() error {]]
       Init the FD by calling ~fd.pdf.Init(fd.net, true)~ to tell runtime netpoll
-      to poll the fd
+      to manage the fd
 
 ***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20setAddr(laddr,%20raddr%20Addr)%20{][func (fd *netFD) setAddr(laddr, raddr Addr) {]]
       SETTERs to set local and remote addr.
@@ -566,7 +566,37 @@
       Duplicate fd with an ~*os.File~, note that fd.pfd is set to blocking so
       that both the old fd and new fd are blocking (note that, O_BLOCKING is a
       field in open file descriptors, hence are shared across dup)
+
+***** [[file:/usr/local/go/src/net/sock_posix.go::func%20(fd%20*netFD)%20addrFunc()%20func(syscall.Sockaddr)%20Addr%20{][func (fd *netFD) addrFunc() func(syscall.Sockaddr) Addr {]]
+      *Defined in [[*sock_posix.go][sock_posix]].go*
       
+      Returns functions to be called to convert ~syscall.Sockaddr~ interface to
+      ~net.Addr~ interface  
+
+***** [[file:/usr/local/go/src/net/sock_posix.go::func%20(fd%20*netFD)%20dial(ctx%20context.Context,%20laddr,%20raddr%20sockaddr)%20error%20{][func (fd *netFD) dial(ctx context.Context, laddr, raddr sockaddr) error {]]
+      *Defined in [[*sock_posix.go][sock_posix]].go*
+
+      Actually connect to the remote host
+      
+      1. Bind local IP if necessary via ~syscall.Bind~
+      2. Connect to the rmeote host via ~*netFD.connect~
+      3. Lastly, save local addr and remote add to /fd/
+
+***** [[file:/usr/local/go/src/net/sock_posix.go::func%20(fd%20*netFD)%20listenStream(laddr%20sockaddr,%20backlog%20int)%20error%20{][func (fd *netFD) listenStream(laddr sockaddr, backlog int) error {]]
+      *Defined in [[*sock_posix.go][sock_posix]].go*
+
+      1. Set default sock opts for Listener, 
+      2. Bind local addr if necessary
+      3. Set listen backlog
+      4. Set local addr to /fd/
+
+***** [[file:/usr/local/go/src/net/sock_posix.go::func%20(fd%20*netFD)%20listenDatagram(laddr%20sockaddr)%20error%20{][func (fd *netFD) listenDatagram(laddr sockaddr) error {]]
+      *Defined in [[*sock_posix.go][sock_posix]].go*
+
+      1. Special handling for Muticast UDP Sockets
+      2. Bind local addr if necessary
+      3. Set local addr to /fd/
+
 *** Functions
 **** [[file:/usr/local/go/src/net/fd_unix.go::func%20newFD(sysfd,%20family,%20sotype%20int,%20net%20string)%20(*netFD,%20error)%20{][func newFD(sysfd, family, sotype int, net string) (*netFD, error) {]]
      /sysfd/: The int FD
@@ -631,9 +661,52 @@
 **** [[file:/usr/local/go/src/net/file_unix.go::func%20filePacketConn(f%20*os.File)%20(PacketConn,%20error)%20{][func filePacketConn(f *os.File) (PacketConn, error) {]]
      Given an open file descriptor /f/, return the corresponding ~PacketConn~ 
 
-** DONE ipsock.go
-   CLOSED: [2018-03-26 Mon 08:24]
-   - State "DONE"       from "TODO"       [2018-03-26 Mon 08:24]
+** sock_posix.go
+*** Types
+**** [[file:/usr/local/go/src/net/sock_posix.go::type%20sockaddr%20interface%20{][type sockaddr interface {]]
+     ~sockaddr~ interface adds additional methods to ~Addr~ interface. Pay
+     special attention to ~sockaddr~ method, which converts the addr into
+     ~syscall.Sockaddr~ 
+
+     #+begin_src go 
+     type sockaddr interface {
+         Addr
+
+         // family returns the platform-dependent address family
+         // identifier.
+         family() int
+
+         // isWildcard reports whether the address is a wildcard
+         // address.
+         isWildcard() bool
+
+         // sockaddr returns the address converted into a syscall
+         // sockaddr type that implements syscall.Sockaddr
+         // interface. It returns a nil interface when the address is
+         // nil.
+         sockaddr(family int) (syscall.Sockaddr, error)
+
+         // toLocal maps the zero address to a local system address (127.0.0.1 or ::1)
+         toLocal(net string) sockaddr
+     }
+     #+end_src
+
+**** More methods for *netFD (noted in *netFD)
+
+*** Functions
+**** [[file:/usr/local/go/src/net/sock_posix.go::func%20socket(ctx%20context.Context,%20net%20string,%20family,%20sotype,%20proto%20int,%20ipv6only%20bool,%20laddr,%20raddr%20sockaddr)%20(fd%20*netFD,%20err%20error)%20{][func socket(ctx context.Context, net string, family, sotype, proto int, ipv6only bool, laddr, raddr sockaddr) (fd *netFD, err error) {]]
+     Returns a network file descriptor that is ready for async IO using the
+     network poller
+
+     Firstly, get a sock FD /s/ via ~sysSocket~ whose SOCK_CLOEXEC is set
+     Then, set default socket options for /s/
+     Then, create a new ~*netFD~ /fd/
+     If laddr is nonnil but raddr is, the socket is a Listener
+       - for TCP, set the max listener backlog and bind local addr
+       - For UDP, simply bind the local addr
+
+     Otherwise, the socket is a dialer, dial the remote addr
+** ipsock.go
 *** Types
 **** [[file:/usr/local/go/src/net/ipsock.go::type%20ipStackCapabilities%20struct%20{][type ipStackCapabilities struct {]]
      Reports capabilities of IP stack, such as IPv4, IPv6, IPv4OverIPv6 .etc 
