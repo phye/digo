@@ -461,6 +461,52 @@
 **** [[file:/usr/local/go/src/net/net.go::func%20acquireThread()%20{][func acquireThread() {]]
      Send message to ~threadLimit~ chan (which is a buffered chan of 500 slots) 
 **** [[file:/usr/local/go/src/net/net.go::func%20releaseThread()%20{][func releaseThread() {]]
+** DONE ipsock.go
+   CLOSED: [2018-03-26 Mon 08:24]
+   - State "DONE"       from "TODO"       [2018-03-26 Mon 08:24]
+*** Types
+**** [[file:/usr/local/go/src/net/ipsock.go::type%20ipStackCapabilities%20struct%20{][type ipStackCapabilities struct {]]
+     Reports capabilities of IP stack, such as IPv4, IPv6, IPv4OverIPv6 .etc 
+
+**** [[*][type addrList {}Addr]]
+     Represents a list of network endpoint [[*%5B%5Bfile:/usr/local/go/src/net/net.go::type%2520Addr%2520interface%2520{%5D%5Btype%20Addr%20interface%20{%5D%5D][Addr]]
+     
+***** [[file:/usr/local/go/src/net/ipsock.go::func%20(addrs%20addrList)%20forResolve(network,%20addr%20string)%20Addr%20{][func (addrs addrList) forResolve(network, addr string) Addr {]]
+      Returns the most appropriate address in /address/ for a call to
+      ResolveTCPAddr, ResolveUDPAddr, or ResolveIPAddr
+
+***** [[file:/usr/local/go/src/net/ipsock.go::func%20(addrs%20addrList)%20first(strategy%20func(Addr)%20bool)%20Addr%20{][func (addrs addrList) first(strategy func(Addr) bool) Addr {]]
+      Returns the first address which satisfies strategy, or if none do, then
+      the first address of any kind
+
+      Pay special attention to ~strategy~ which is a function variable
+
+***** [[file:/usr/local/go/src/net/ipsock.go::func%20(addrs%20addrList)%20partition(strategy%20func(Addr)%20bool)%20(primaries,%20fallbacks%20addrList)%20{][func (addrs addrList) partition(strategy func(Addr) bool) (primaries, fallbacks addrList) {]]
+
+*** Functions
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20supportsIPv4()%20bool%20{][func supportsIPv4() bool {]]
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20supportsIPv6()%20bool%20{][func supportsIPv6() bool {]]
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20supportsIPv4map()%20bool%20{][func supportsIPv4map() bool {]]
+     Simple GETTERs to return members of ~ipStackCaps~ which will invoke
+     platform dependent ~ipStackCaps.probe~ *once*. 
+
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20isIPv4(addr%20Addr)%20bool%20{][func isIPv4(addr Addr) bool {]]
+     reports whether addr contains an IPv4 address
+     *Supported Addrs*: ~*TCPAddr~, ~*UDPAddr~, ~*IPAddr~
+
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20filterAddrList(filter%20func(IPAddr)%20bool,%20ips%20%5B%5DIPAddr,%20inetaddr%20func(IPAddr)%20Addr,%20originalAddr%20string)%20(addrList,%20error)%20{][func filterAddrList(filter func(IPAddr) bool, ips {}IPAddr, inetaddr func(IPAddr) Addr, original string) (addrList, error)]]
+     applies a filter to a list of ~IPAddr~, and convert the filtered IPAddrs to
+     a slice of [[*%5B%5Bfile:/usr/local/go/src/net/net.go::type%2520Addr%2520interface%2520{%5D%5Btype%20Addr%20interface%20{%5D%5D][Addr]]s
+
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20SplitHostPort(hostport%20string)%20(host,%20port%20string,%20err%20error)%20{][func SplitHostPort(hostport string) (host, port string, err error) {]]
+     Splits a newtwork address of the form "host:port", "host%zone:port",
+     "[host]:port", or "[host%zone]:port" into "host" or "host%zone" and "port" 
+
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20splitHostZone(s%20string)%20(host,%20zone%20string)%20{][func splitHostZone(s string) (host, zone string) {]]
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20JoinHostPort(host,%20port%20string)%20string%20{][func JoinHostPort(host, port string) string {]]
+     Self Explanatory
+**** [[file:/usr/local/go/src/net/ipsock.go::func%20loopbackIP(net%20string)%20IP%20{][func loopbackIP(net string) IP {]]
+     Return an IPv6 or IPv4 loopback IP address
 ** lookup.go
 *** Variables
 **** [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
@@ -535,6 +581,22 @@
 
       Pay special attention to ~LookupAddr~ method which performs reverse DNS
       lookup. 
+
+***** [[file:/usr/local/go/src/net/ipsock.go::func%20(r%20*Resolver)%20internetAddrList(ctx%20context.Context,%20net,%20addr%20string)%20(addrList,%20error)%20{][func (r *Resolver) internetAddrList(ctx context.Context, net, addr string) (addrList, error) {]]
+      *Defined in [[*ipsock.go][ipsock.go]]*
+      Resolves /addr/, which may be a literal IP address or a DNS name, and
+      returns a list of internet protocol family addresses. 
+      
+      1. For TCP and UDP, split addr into host and port. Then lookup port no. via
+         ~r.LookupPort~. For IP /net/, simply save addr to host
+      2. Then, define an inner function ~inetaddr~, which convert an ~IPAddr~ to
+         ~Addr~
+      3. Try to convert host to IP address
+         - Parse as IPv4 directly, if error, continue
+         - Parse as IPv6 address, continue on error
+         - Lastly, try to lookup the IP addr via DNS resolve
+      4. Lastly, filter the addr list and returns IPs that's matching /net/
+
 
 *** Functions
 **** [[file:/usr/local/go/src/net/lookup.go::func%20lookupProtocolMap(name%20string)%20(int,%20error)%20{][func lookupProtocolMap(name string) (int, error) {]]
