@@ -677,6 +677,101 @@
      Self Explanatory
 **** [[file:/usr/local/go/src/net/ipsock.go::func%20loopbackIP(net%20string)%20IP%20{][func loopbackIP(net string) IP {]]
      Return an IPv6 or IPv4 loopback IP address
+
+** rawconn.go
+*** Types
+**** [[file:/usr/local/go/src/net/rawconn.go::type%20rawConn%20struct%20{][type rawConn struct {]]
+     #+begin_src go
+     type rawConn struct {
+         fd *netFD
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/rawconn.go::func%20(c%20*rawConn)%20ok()%20bool%20{%20return%20c%20!%3D%20nil%20&&%20c.fd%20!%3D%20nil%20}][func (c *rawConn) ok() bool { return c != nil && c.fd != nil }]]
+
+***** [[file:/usr/local/go/src/net/rawconn.go::func%20(c%20*rawConn)%20Control(f%20func(uintptr))%20error%20{][func (c *rawConn) Control(f func(uintptr)) error {]]
+***** [[file:/usr/local/go/src/net/rawconn.go::func%20(c%20*rawConn)%20Read(f%20func(uintptr)%20bool)%20error%20{][func (c *rawConn) Read(f func(uintptr) bool) error {]]
+***** [[file:/usr/local/go/src/net/rawconn.go::func%20(c%20*rawConn)%20Write(f%20func(uintptr)%20bool)%20error%20{][func (c *rawConn) Write(f func(uintptr) bool) error {]]
+      Calls the use-defined function /f/ for Control/Read/Write operation. The
+      above three methods are required by ~syscall.RawConn~ interface
+
+**** [[file:/usr/local/go/src/net/rawconn.go::type%20rawListener%20struct%20{][type rawListener struct {]]
+     Simple wrapper over rawConn
+
+     #+begin_src go
+     type rawListener struct {
+         rawConn
+     }
+     #+end_src
+
+*** Functions
+**** [[file:/usr/local/go/src/net/rawconn.go::func%20newRawConn(fd%20*netFD)%20(*rawConn,%20error)%20{][func newRawConn(fd *netFD) (*rawConn, error) {]]
+
+** iprawsock.go
+*** Types
+**** [[file:/usr/local/go/src/net/iprawsock.go::type%20IPAddr%20struct%20{][type IPAddr struct {]]
+     #+begin_src go
+     type IPAddr struct {
+         IP   IP
+         Zone string // IPv6 scoped addressing zone
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(a%20*IPAddr)%20Network()%20string%20{%20return%20"ip"%20}][func (a *IPAddr) Network() string { return "ip" }]]
+      Network() method, required by ~Addr~
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(a%20*IPAddr)%20String()%20string%20{][func (a *IPAddr) String() string {]]
+      String() method, required by ~Addr~, returns ip%zone, if zone is not emty 
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(a%20*IPAddr)%20isWildcard()%20bool%20{][func (a *IPAddr) isWildcard() bool {]]
+      Return if any IP ddr
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(a%20*IPAddr)%20opAddr()%20Addr%20{][func (a *IPAddr) opAddr() Addr {]]
+      Simply convert IPAddr to Addr
+
+**** [[file:/usr/local/go/src/net/iprawsock.go::type%20IPConn%20struct%20{][type IPConn struct {]]
+     A simple wrapper which embeds ~conn~ (which implements ~net.Conn~
+     interface). Note that ~IPConn~ implements methods required by
+     ~net.PacketConn~ interface
+
+     #+begin_src go
+     type IPConn struct {
+         conn
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20SyscallConn()%20(syscall.RawConn,%20error)%20{][func (c *IPConn) SyscallConn() (syscall.RawConn, error) {]]
+      Return net.rawConn which satisfies ~syscall.RawConn~ interface
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20ReadFromIP(b%20%5B%5Dbyte)%20(int,%20*IPAddr,%20error)%20{][func (c *IPConn) ReadFromIP(b {}byte) (int, *IPAddr, error)]]
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20ReadFrom(b%20%5B%5Dbyte)%20(int,%20Addr,%20error)%20{][func (c *IPConn) ReadFrom(b {}byte) (int, Addr, error)]]
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20ReadMsgIP(b,%20oob%20%5B%5Dbyte)%20(n,%20oobn,%20flags%20int,%20addr%20*IPAddr,%20err%20error)%20{][func (c *IPConn) ReadMsgIP(b, oob {}byte) (n, oobn, flags int, addr *IPAddr, err error)]]
+      Simliar functions which call platform dependent ~c.readFrom~ to read bytes
+      into b and return (# of bytes, addr, error)
+
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20WriteToIP(b%20%5B%5Dbyte,%20addr%20*IPAddr)%20(int,%20error)%20{][func (c *IPConn) WriteToIP(b {}byte, addr *IPAddr) (int, error)]]
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20WriteTo(b%20%5B%5Dbyte,%20addr%20Addr)%20(int,%20error)%20{][func (c *IPConn) WriteTo(b {}byte, addr Addr) (int, error)]]
+***** [[file:/usr/local/go/src/net/iprawsock.go::func%20(c%20*IPConn)%20WriteMsgIP(b,%20oob%20%5B%5Dbyte,%20addr%20*IPAddr)%20(n,%20oobn%20int,%20err%20error)%20{][func (c *IPConn) WriteMsgIP(b, oob {}byte, addr *IPAddr) (n, oobn int, err error)]]
+      
+*** Functions
+**** [[file:/usr/local/go/src/net/iprawsock.go::func%20ResolveIPAddr(network,%20address%20string)%20(*IPAddr,%20error)%20{][func ResolveIPAddr(network, address string) (*IPAddr, error) {]]
+     Returns an address of IP end point
+
+**** [[file:/usr/local/go/src/net/iprawsock.go::func%20newIPConn(fd%20*netFD)%20*IPConn%20{%20return%20&IPConn{conn{fd}}%20}][func newIPConn(fd *netFD) *IPConn { return &IPConn{conn{fd}} }]]
+     Given ~*netFD~, return ~*IPConn~
+
+**** [[file:/usr/local/go/src/net/iprawsock.go::func%20DialIP(network%20string,%20laddr,%20raddr%20*IPAddr)%20(*IPConn,%20error)%20{][func DialIP(network string, laddr, raddr *IPAddr) (*IPConn, error) {]]
+     Acts like Dial for IP networks. The network must be an IP network name. 
+
+     Call platform dependent ~dialIP~ with ~Background~ context to dial remote
+     addr and return ~*IPConn~
+
+**** [[file:/usr/local/go/src/net/iprawsock.go::func%20ListenIP(network%20string,%20laddr%20*IPAddr)%20(*IPConn,%20error)%20{][func ListenIP(network string, laddr *IPAddr) (*IPConn, error) {]]
+     Acts like ~ListenPacket~ for IP networks
+
+     Call platform dependent ~listenIP~ with ~Background~ context and return
+     the ~*IPConn~ connection
+
 ** lookup.go
 *** Variables
 **** [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
