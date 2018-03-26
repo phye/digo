@@ -461,6 +461,115 @@
 **** [[file:/usr/local/go/src/net/net.go::func%20acquireThread()%20{][func acquireThread() {]]
      Send message to ~threadLimit~ chan (which is a buffered chan of 500 slots) 
 **** [[file:/usr/local/go/src/net/net.go::func%20releaseThread()%20{][func releaseThread() {]]
+** fd_unix.go
+*** Types
+**** [[file:/usr/local/go/src/net/fd_unix.go::type%20netFD%20struct%20{][type netFD struct {]]
+     #+begin_src go
+          
+     type netFD struct {
+         pfd poll.FD
+
+         // immutable until Close
+         family      int
+         sotype      int
+         isConnected bool
+         net         string
+         laddr       Addr
+         raddr       Addr
+     }
+     #+end_src
+
+     Read carefully the doc of internal/poll
+     #+BEGIN_QUOTE
+     Package poll supports non-blocking I/O on file descriptors *with
+     polling*. This supports I/O operations that *block only a goroutine*, not a
+     thread. This is used by the net and os packages. It uses *a poller built
+     into the runtime*, with support from the runtime scheduler. 
+     #+END_QUOTE
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20init()%20error%20{][func (fd *netFD) init() error {]]
+      Init the FD by calling ~fd.pdf.Init(fd.net, true)~ to tell runtime netpoll
+      to poll the fd
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20setAddr(laddr,%20raddr%20Addr)%20{][func (fd *netFD) setAddr(laddr, raddr Addr) {]]
+      SETTERs to set local and remote addr.
+      Also, set finalizer for the fd via
+      [[file:/usr/local/go/src/net/fd_unix.go::runtime.SetFinalizer(fd,%20(*netFD).Close)][runtime.SetFinalizer(fd, (*netFD).Close)]]
+      So that user of the package does not need to close the FD explicitly
+      (i.e., the garbage collector will close it for you) as long as GC find it
+      suitable... 
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20name()%20string%20{][func (fd *netFD) name() string {]]
+      Simple function to return name of the fd in the format below:
+
+      tcp: <local_addr>:<local_port> -> <remote_addr>:<remote_port>
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20connect(ctx%20context.Context,%20la,%20ra%20syscall.Sockaddr)%20(rsa%20syscall.Sockaddr,%20ret%20error)%20{][func (fd *netFD) connect(ctx context.Context, la, ra syscall.Sockaddr) (rsa syscall.Sockaddr, ret error) {]]
+      Connect to the remote address, 
+      
+      1. Call ~connectFunc~ (Defined in hook_unix.go, which should be
+         syscall.Connect) 
+         
+         Switch error handdling based on error:
+         - ~EINPROGRESS~, ~EALREADY~, or ~EINTR~, do noop and continue 
+         - nil or ~EISCONN~, 
+           Init ~fd.pdf~ again, and return nil ~rsa~
+
+      2. If ctx has Deadline, associate write deadline with fd.pfd
+
+      3. Then, start the /interrupter/ goroutine, if this context can be
+         canceled. The /interrupter/ goroutine waits for the context to be done
+         and interrupts the dial (by altering the fd's write deadline, which
+         wakes up waitWrite)
+
+      4. Lastly, performing the actual readable blocking wait
+         [[file:/usr/local/go/src/net/fd_unix.go::if%20err%20:%3D%20fd.pfd.WaitWrite()%3B%20err%20!%3D%20nil%20{][if err := fd.pfd.WaitWrite(); err != nil {]]
+
+      5. Lastly, if socket is connected successfully, i.e., SO_ERROR is 0, call
+         ~syscall.Getpeername~ to get the remote peername
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20Close()%20error%20{][func (fd *netFD) Close() error {]]
+      Clear finalizer and close fd. 
+      Simply call internal/poll.FD methods to perform action
+      
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20shutdown(how%20int)%20error%20{][func (fd *netFD) shutdown(how int) error {]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20closeRead()%20error%20{][func (fd *netFD) closeRead() error {]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20closeWrite()%20error%20{][func (fd *netFD) closeWrite() error {]]
+      Shutown and variants
+      Simply call internal/poll.FD methods to perform action
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20Read(p%20%5B%5Dbyte)%20(n%20int,%20err%20error)%20{][func (fd *netFD) Read(p {}byte) (n int, err error)]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20readFrom(p%20%5B%5Dbyte)%20(n%20int,%20sa%20syscall.Sockaddr,%20err%20error)%20{][func (fd *netFD) readFrom(p {}byte) (n int, sa syscall.Sockaddr, err error)]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20readMsg(p%20%5B%5Dbyte,%20oob%20%5B%5Dbyte)%20(n,%20oobn,%20flags%20int,%20sa%20syscall.Sockaddr,%20err%20error)%20{][func (fd *netFD) readMsg(p {}byte, oob {}byte) (n, oobn, flags int, sa syscall.Sockaddr, err error)]]
+      Read and variants
+      Simply call internal/poll.FD methods to perform action
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20Write(p%20%5B%5Dbyte)%20(nn%20int,%20err%20error)%20{][func (fd *netFD) Write(p {}byte) (nn int, err error)]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20writeTo(p%20%5B%5Dbyte,%20sa%20syscall.Sockaddr)%20(n%20int,%20err%20error)%20{][func (fd *netFD) writeTo(p {}byte, sa syscall.Sockaddr) (n int, err error)]]
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20writeMsg(p%20%5B%5Dbyte,%20oob%20%5B%5Dbyte,%20sa%20syscall.Sockaddr)%20(n%20int,%20oobn%20int,%20err%20error)%20{][func (fd *netFD) writeMsg(p {}byte, oob {}byte, sa syscall.Sockaddr) (n int, oobn int, err error)]]
+      Write and vairants
+      Simply call internal/poll.FD methods to perform action
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20accept()%20(netfd%20*netFD,%20err%20error)%20{][func (fd *netFD) accept() (netfd *netFD, err error) {]]
+      Call poll.FD.Accept method to accept a new socket connection in /d/ 
+      
+      Then, create a new /netfd/ with /d/ and fields in /fd/ to create a new
+      /netfd/, init and setAddr for it
+
+
+***** [[file:/usr/local/go/src/net/fd_unix.go::func%20(fd%20*netFD)%20dup()%20(f%20*os.File,%20err%20error)%20{][func (fd *netFD) dup() (f *os.File, err error) {]]
+      *fd will be blocking after this function call!*
+
+      Duplicate fd with an ~*os.File~, note that fd.pfd is set to blocking so
+      that both the old fd and new fd are blocking (note that, O_BLOCKING is a
+      field in open file descriptors, hence are shared across dup)
+      
+*** Functions
+**** [[file:/usr/local/go/src/net/fd_unix.go::func%20newFD(sysfd,%20family,%20sotype%20int,%20net%20string)%20(*netFD,%20error)%20{][func newFD(sysfd, family, sotype int, net string) (*netFD, error) {]]
+     /sysfd/: The int FD
+     /family/: PF_INET, PF_LOCAL, PF_UNIX .etc
+     /sotype/: socket type, i.e., SOCK_STREAM, SOCK_DGRAM .etc
+     /net/: Network string
 ** DONE ipsock.go
    CLOSED: [2018-03-26 Mon 08:24]
    - State "DONE"       from "TODO"       [2018-03-26 Mon 08:24]
