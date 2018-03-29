@@ -865,6 +865,96 @@
      Call platform dependent ~listenIP~ with ~Background~ context and return
      the ~*IPConn~ connection
 
+** tcpsock.go
+*** Types
+**** [[file:/usr/local/go/src/net/tcpsock.go::type%20TCPAddr%20struct%20{][type TCPAddr struct {]]
+     Represents the address of a TCP end point
+     
+     #+begin_src go
+     type TCPAddr struct {
+         IP   IP
+         Port int
+         Zone string // IPv6 scoped addressing zone
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20Network()%20string%20{%20return%20"tcp"%20}][func (a *TCPAddr) Network() string { return "tcp" }]]
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20String()%20string%20{][func (a *TCPAddr) String() string {]]
+      Methods required by ~Addr~ interface
+
+***** [[file:/usr/local/go/src/net/tcsock.go::func%20(a%20*TCPAddr)%20isWildcard()%20bool%20{][func (a *TCPAddr) isWildcard() bool {]]
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20opAddr()%20Addr%20{][func (a *TCPAddr) opAddr() Addr {]]
+      Aug self explanatory methods
+
+**** [[file:/usr/local/go/src/net/tcpsock.go::type%20TCPConn%20struct%20{][type TCPConn struct {]]
+     Embeds conn struct to "inherit" common methods and overrides certain
+     methods 
+     #+begin_src go
+     type TCPConn struct {
+         conn
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SyscallConn()%20(syscall.RawConn,%20error)%20{][func (c *TCPConn) SyscallConn() (syscall.RawConn, error) {]]
+      Required by ~syscall.Conn~ interface which returns a ~syscall.RawConn~
+      interface 
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20ReadFrom(r%20io.Reader)%20(int64,%20error)%20{][func (c *TCPConn) ReadFrom(r io.Reader) (int64, error) {]]
+      Required by ~io.ReaderFrom~ interface
+
+      Read from reader /r/ until EOF or error, returns no. of bytes read on
+      success and send out via /c/
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20CloseRead()%20error%20{][func (c *TCPConn) CloseRead() error {]]
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20CloseWrite()%20error%20{][func (c *TCPConn) CloseWrite() error {]]
+      Shutdown the reading side/writing side of the TCP connection
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetLinger(sec%20int)%20error%20{][func (c *TCPConn) SetLinger(sec int) error {]]
+      Sets the behavior of Close on a connection which still has data waiting to
+      be sent or to be acked. 
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetNoDelay(noDelay%20bool)%20error%20{][func (c *TCPConn) SetNoDelay(noDelay bool) error {]]
+      Controls whether the system should delay packet transmission in hopes of
+      fewer packets. Default is true
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetKeepAlive(keepalive%20bool)%20error%20{][func (c *TCPConn) SetKeepAlive(keepalive bool) error {]]
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetKeepAlivePeriod(d%20time.Duration)%20error%20{][func (c *TCPConn) SetKeepAlivePeriod(d time.Duration) error {]]
+      Call platform dependent functions to set keepalive related settings
+
+**** [[file:/usr/local/go/src/net/tcpsock.go::type%20TCPListener%20struct%20{][type TCPListener struct {]]
+     TCPListner is a TCP network listener. 
+
+     #+begin_src go
+     type TCPListener struct {
+         fd *netFD
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20SyscallConn()%20(syscall.RawConn,%20error)%20{][func (l *TCPListener) SyscallConn() (syscall.RawConn, error) {]]
+      Required by ~syscall.Conn~ interface which returns a ~syscall.RawConn~
+      interface 
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20AcceptTCP()%20(*TCPConn,%20error)%20{][func (l *TCPListener) AcceptTCP() (*TCPConn, error) {]]
+      Accepts the next incoming call and returns the new connection
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20Accept()%20(Conn,%20error)%20{][func (l *TCPListener) Accept() (Conn, error) {]]
+      Similiar with above, but return a generic Conn
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20Close()%20error%20{][func (l *TCPListener) Close() error {]]
+      Stop listening on the TCP address. 
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20SetDeadline(t%20time.Time)%20error%20{][func (l *TCPListener) SetDeadline(t time.Time) error {]]
+      Sets the deadline associated with the listener. Similiar with the methods
+      of ~struct conn~ 
+
+***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(l%20*TCPListener)%20File()%20(f%20*os.File,%20err%20error)%20{][func (l *TCPListener) File() (f *os.File, err error) {]]
+      Returns a copy of the underlying os.File, set to blocking mode. Similiar
+      with that defined in [[*net.go][net.go]] of ~struct conn~
+
+*** Functions
+**** [[file:/usr/local/go/src/net/tcpsock.go::func%20ResolveTCPAddr(network,%20address%20string)%20(*TCPAddr,%20error)%20{][func ResolveTCPAddr(network, address string) (*TCPAddr, error) {]]
+     Returns an address of TCP end point by using
+     ~DefaultResolver.internetAddrList~ 
+
+**** [[file:/usr/local/go/src/net/tcpsock.go::func%20ListenTCP(network%20string,%20laddr%20*TCPAddr)%20(*TCPListener,%20error)%20{][func ListenTCP(network string, laddr *TCPAddr) (*TCPListener, error) {]]
+     Given network and local addr, returns a TCPListener 
 ** lookup.go
 *** Variables
 **** [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
