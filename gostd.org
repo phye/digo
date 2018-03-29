@@ -1076,7 +1076,6 @@
          - Lastly, try to lookup the IP addr via DNS resolve
       4. Lastly, filter the addr list and returns IPs that's matching /net/
 
-
 *** Functions
 **** [[file:/usr/local/go/src/net/lookup.go::func%20lookupProtocolMap(name%20string)%20(int,%20error)%20{][func lookupProtocolMap(name string) (int, error) {]]
      Given protocol name, return protocol number
@@ -1101,3 +1100,34 @@
      canceled. 
      [[file:/usr/local/go/src/net/lookup.go::return%20DefaultResolver.LookupPort(context.Background(),%20network,%20service)][return DefaultResolver.LookupPort(context.Background(), network, service)]]
 **** Other simple functions omitted
+
+** TODO lookup_unix.go
+*** Variables
+**** [[file:/usr/local/go/src/net/lookup_unix.go::var%20onceReadProtocols%20sync.Once][var onceReadProtocols sync.Once]] 
+     ~sync.Once~ variable to protect ~readProtocols~ function below
+*** Types
+    
+*** Functions
+**** [[file:/usr/local/go/src/net/lookup_unix.go::func%20readProtocols()%20{][func readProtocols() {]]
+     Read "/etc/protocols" into memory and store the protocol results in
+     net.protocol map
+     
+     This function will only execute once
+     
+** TODO dial.go
+*** Types
+**** [[file:/usr/local/go/src/net/dial.go::type%20Dialer%20struct%20{][type Dialer struct {]]
+     A Dialer contains options for connecting to an address. 
+
+     The zero value for each field is equivalent to dialing without that
+     option. 
+
+     [[file:/usr/local/go/src/net/dial.go::func%20(d%20*Dialer)%20deadline(ctx%20context.Context,%20now%20time.Time)%20(earliest%20time.Time)%20{][func (d *Dialer) deadline(ctx context.Context, now time.Time) (earliest time.Time) {]]
+     Returns the earliest of now+Timeout, d.Deadline and the context's deadline
+
+*** Functions
+**** [[file:/usr/local/go/src/net/dial.go::func%20partialDeadline(now,%20deadline%20time.Time,%20addrsRemaining%20int)%20(time.Time,%20error)%20{][func partialDeadline(now, deadline time.Time, addrsRemaining int) (time.Time, error) {]]
+     Returns the deadline to use for a single address
+
+**** [[file:/usr/local/go/src/net/dial.go::func%20parseNetwork(ctx%20context.Context,%20network%20string,%20needsProto%20bool)%20(afnet%20string,%20proto%20int,%20err%20error)%20{][func parseNetwork(ctx context.Context, network string, needsProto bool) (afnet string, proto int, err error) {]]
+     Returns afnet(ip, ip4, ip6), proto(http, https .etc) well known port no.
