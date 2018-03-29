@@ -1131,3 +1131,87 @@
 
 **** [[file:/usr/local/go/src/net/dial.go::func%20parseNetwork(ctx%20context.Context,%20network%20string,%20needsProto%20bool)%20(afnet%20string,%20proto%20int,%20err%20error)%20{][func parseNetwork(ctx context.Context, network string, needsProto bool) (afnet string, proto int, err error) {]]
      Returns afnet(ip, ip4, ip6), proto(http, https .etc) well known port no.
+
+* internal
+** poll
+   Package ~poll~ supports non-blocking I/O on file descriptors with polling. This
+   supports I/O operations that block only a goroutine, not a thread. 
+
+   Package ~poll~ uses a poller built into the runtime, with support from the
+   runtime scheduler.
+
+*** fd.go
+**** Types
+***** [[file:/usr/local/go/src/internal/poll/fd.go::type%20TimeoutError%20struct{}][type TimeoutError struct{}]]
+      A simple struct which implements ~error~ interface and ~net.Error~ interface
+
+****** [[file:/usr/local/go/src/internal/poll/fd.go::func%20(e%20*TimeoutError)%20Error()%20string%20{%20return%20"i/o%20timeout"%20}][func (e *TimeoutError) Error() string { return "i/o timeout" }]]
+****** [[file:/usr/local/go/src/internal/poll/fd.go::func%20(e%20*TimeoutError)%20Timeout()%20bool%20{%20return%20true%20}][func (e *TimeoutError) Timeout() bool { return true }]]
+****** [[file:/usr/local/go/src/internal/poll/fd.go::func%20(e%20*TimeoutError)%20Temporary()%20bool%20{%20return%20true%20}][func (e *TimeoutError) Temporary() bool { return true }]]
+       
+**** Variables
+     Definitions for: 
+***** [[file:/usr/local/go/src/internal/poll/fd.go::var%20ErrNetClosing%20%3D%20errors.New("use%20of%20closed%20network%20connection")][ErrNetClosing]]
+***** [[file:/usr/local/go/src/internal/poll/fd.go::var%20ErrFileClosing%20%3D%20errors.New("use%20of%20closed%20file")][ErrFileClosing]]
+***** [[file:/usr/local/go/src/internal/poll/fd.go::var%20ErrNoDeadline%20%3D%20errors.New("file%20type%20does%20not%20support%20deadline")][ErrNoDeadline]]
+      ErrNoDeadline is returned when a request is made to set a deadline on a
+      file type that does not use the poller
+***** [[file:/usr/local/go/src/internal/poll/fd.go::var%20ErrTimeout%20error%20%3D%20&TimeoutError{}][ErrTimeout]]
+
+**** Functions
+***** [[file:/usr/local/go/src/internal/poll/fd.go::func%20consume(v%20*%5B%5D%5B%5Dbyte,%20n%20int64)%20{][func consume(v *{}{}byte, n int64)]]
+      Removes data from a slice of byte slices, for writev
+
+*** fd_poll_runtime.go
+**** Types
+***** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::type%20pollDesc%20struct%20{][type pollDesc struct {]]
+      #+begin_src go
+      type pollDesc struct {
+          runtimeCtx uintptr
+      }
+      #+end_src
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20init(fd%20*FD)%20error%20{][func (pd *pollDesc) init(fd *FD) error {]]
+       Init poll in runtime for ~fd.Sysfd~
+
+       1. Init poll server once in runtime
+       2. Open poll in runtime for ~fd.Sysfd~ via ~runtime_pollOpen~ and save
+          ctx returned to ~pd.runtimeCtx~
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20close()%20{][func (pd *pollDesc) close() {]]
+       Stop polling for ~pd.runtimeCtx~, hence the corresponding fd in
+       ~fd.Sysfd~ 
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20evict()%20{][func (pd *pollDesc) evict() {]]
+       Evicts fd from the pending list, unblocking any I/O running on fd. 
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20prepare(mode%20int,%20isFile%20bool)%20error%20{][func (pd *pollDesc) prepare(mode int, isFile bool) error {]]
+       Set poll mode via ~runtime_pollReset~, mode can be 'r' or 'w'
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20prepareWrite(isFile%20bool)%20error%20{][func (pd *pollDesc) prepareWrite(isFile bool) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20prepareRead(isFile%20bool)%20error%20{][func (pd *pollDesc) prepareRead(isFile bool) error {]]
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20wait(mode%20int,%20isFile%20bool)%20error%20{][func (pd *pollDesc) wait(mode int, isFile bool) error {]]
+       Wrap ~runtime_pollWait~ to actually wait for readable or writable 
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20waitRead(isFile%20bool)%20error%20{][func (pd *pollDesc) waitRead(isFile bool) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20waitWrite(isFile%20bool)%20error%20{][func (pd *pollDesc) waitWrite(isFile bool) error {]]
+       
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20waitCanceled(mode%20int)%20{][func (pd *pollDesc) waitCanceled(mode int) {]]
+       FIXME: Wrap ~runtime_pollWaitCanceled~ to cancel wait???
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(pd%20*pollDesc)%20pollable()%20bool%20{][func (pd *pollDesc) pollable() bool {]]
+       Return true if ~pd.runtimeCtx~ is not zero, i.e., not closed
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20setDeadlineImpl(fd%20*FD,%20t%20time.Time,%20mode%20int)%20error%20{][func setDeadlineImpl(fd *FD, t time.Time, mode int) error {]] 
+       Set poll timeout, with some error handling for time overflow. 
+
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(fd%20*FD)%20SetDeadline(t%20time.Time)%20error%20{][func (fd *FD) SetDeadline(t time.Time) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(fd%20*FD)%20SetReadDeadline(t%20time.Time)%20error%20{][func (fd *FD) SetReadDeadline(t time.Time) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20(fd%20*FD)%20SetWriteDeadline(t%20time.Time)%20error%20{][func (fd *FD) SetWriteDeadline(t time.Time) error {]]
+       Call setDeadlineImpl to set different timeout
+
+**** Functions
+****** [[file:/usr/local/go/src/internal/poll/fd_poll_runtime.go::func%20PollDescriptor()%20uintptr%20{][func PollDescriptor() uintptr {]]
+       Wraps ~runtime_pollServerDescriptor~ to return the descriptor being used
+       by the poller. 
+
+       FIXME: Why this function does not require ~runtimeCtx~ ???
