@@ -881,10 +881,16 @@
 ***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20Network()%20string%20{%20return%20"tcp"%20}][func (a *TCPAddr) Network() string { return "tcp" }]]
 ***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20String()%20string%20{][func (a *TCPAddr) String() string {]]
       Methods required by ~Addr~ interface
-
+      
 ***** [[file:/usr/local/go/src/net/tcsock.go::func%20(a%20*TCPAddr)%20isWildcard()%20bool%20{][func (a *TCPAddr) isWildcard() bool {]]
 ***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(a%20*TCPAddr)%20opAddr()%20Addr%20{][func (a *TCPAddr) opAddr() Addr {]]
       Aug self explanatory methods
+
+
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(a%20*TCPAddr)%20family()%20int%20{][func (a *TCPAddr) family() int {]]
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(a%20*TCPAddr)%20sockaddr(family%20int)%20(syscall.Sockaddr,%20error)%20{][func (a *TCPAddr) sockaddr(family int) (syscall.Sockaddr, error) {]]
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(a%20*TCPAddr)%20toLocal(net%20string)%20sockaddr%20{][func (a *TCPAddr) toLocal(net string) sockaddr {]]
+      All *Defined in tcp_sock_posix.go*
 
 **** [[file:/usr/local/go/src/net/tcpsock.go::type%20TCPConn%20struct%20{][type TCPConn struct {]]
      Embeds conn struct to "inherit" common methods and overrides certain
@@ -919,6 +925,15 @@
 ***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetKeepAlive(keepalive%20bool)%20error%20{][func (c *TCPConn) SetKeepAlive(keepalive bool) error {]]
 ***** [[file:/usr/local/go/src/net/tcpsock.go::func%20(c%20*TCPConn)%20SetKeepAlivePeriod(d%20time.Duration)%20error%20{][func (c *TCPConn) SetKeepAlivePeriod(d time.Duration) error {]]
       Call platform dependent functions to set keepalive related settings
+
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(c%20*TCPConn)%20readFrom(r%20io.Reader)%20(int64,%20error)%20{][func (c *TCPConn) readFrom(r io.Reader) (int64, error) {]]
+      Try to call *sendFile* first, if not handled, fallback to
+      ~genericReadFrom~ defined in net.go 
+
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(ln%20*TCPListener)%20accept()%20(*TCPConn,%20error)%20{][func (ln *TCPListener) accept() (*TCPConn, error) {]]
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(ln%20*TCPListener)%20close()%20error%20{][func (ln *TCPListener) close() error {]]
+***** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20(ln%20*TCPListener)%20file()%20(*os.File,%20error)%20{][func (ln *TCPListener) file() (*os.File, error) {]]
+      Call netFD's methods to perform the corresponding actions
 
 **** [[file:/usr/local/go/src/net/tcpsock.go::type%20TCPListener%20struct%20{][type TCPListener struct {]]
      TCPListner is a TCP network listener. 
@@ -955,6 +970,22 @@
 
 **** [[file:/usr/local/go/src/net/tcpsock.go::func%20ListenTCP(network%20string,%20laddr%20*TCPAddr)%20(*TCPListener,%20error)%20{][func ListenTCP(network string, laddr *TCPAddr) (*TCPListener, error) {]]
      Given network and local addr, returns a TCPListener 
+** tcpsock_posix.go
+*** Types 
+*** Functions
+**** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20sockaddrToTCP(sa%20syscall.Sockaddr)%20Addr%20{][func sockaddrToTCP(sa syscall.Sockaddr) Addr {]]
+     Convert ~syscall.Sockaddr~ to ~Addr~
+
+**** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20doDialTCP(ctx%20context.Context,%20net%20string,%20laddr,%20raddr%20*TCPAddr)%20(*TCPConn,%20error)%20{][func doDialTCP(ctx context.Context, net string, laddr, raddr *TCPAddr) (*TCPConn, error) {]]
+     Call [[*ipsock_posix.go][internetSocket]] to actually connect to remote peer and return a
+     [[*fd_unix.go][netFD]], then return a ~TCPConn~ based on ~netFD~
+
+     Handled TCP 'simultaneous connection' bug properly
+
+**** [[file:/usr/local/go/src/net/tcpsock_posix.go::func%20listenTCP(ctx%20context.Context,%20network%20string,%20laddr%20*TCPAddr)%20(*TCPListener,%20error)%20{][func listenTCP(ctx context.Context, network string, laddr *TCPAddr) (*TCPListener, error) {]]
+     Call internetSocket to actually start a listen socket and return netFD,
+     then return a ~TCPListner~ based on ~netFD~
+      
 ** lookup.go
 *** Variables
 **** [[file:/usr/local/go/src/net/ip.go::func%20(ip%20IP)%20MarshalText()%20(%5B%5Dbyte,%20error)%20{][dnsWaitGroup]]
