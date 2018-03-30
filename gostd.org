@@ -1215,7 +1215,7 @@
        by the poller. 
 
        FIXME: Why this function does not require ~runtimeCtx~ ???
-
+       
 *** fd_mutex.go
 **** Types
 ***** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::type%20fdMutex%20struct%20{][type fdMutex struct {]]
@@ -1263,6 +1263,8 @@
        Reverse operation of ~incref~, similar logic except the way to calculate
        new value
 
+       Reports whether there is no remaining reference
+
 ****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20rwlock(read%20bool)%20bool%20{][func (mu *fdMutex) rwlock(read bool) bool {]]
        Adds a reference to mu and locks mu. 
 
@@ -1294,4 +1296,141 @@
 
        *Reports whether there is no remaining reference*
 
+*** fd_unix.go
+**** Types
+***** [[file:/usr/local/go/src/internal/poll/fd_unix.go::type%20FD%20struct%20{][type FD struct {]]
+      A file descriptor that can represent a network conneciton or OS file. 
 
+      #+begin_src go
+      type FD struct {
+          // Lock sysfd and serialize access to Read and Write methods.
+          fdmu fdMutex
+
+          // System file descriptor. Immutable until Close.
+          Sysfd int
+
+          // I/O poller.
+          pd pollDesc
+
+          // Writev cache.
+          iovecs *[]syscall.Iovec
+
+          // Semaphore signaled when file is closed.
+          csema uint32
+
+          // Whether this is a streaming descriptor, as opposed to a
+          // packet-based descriptor like a UDP socket. Immutable.
+          IsStream bool
+
+          // Whether a zero byte read indicates EOF. This is false for a
+          // message based socket connection.
+          ZeroReadIsEOF bool
+
+          // Whether this is a file rather than a network socket.
+          isFile bool
+
+          // Whether this file has been set to blocking mode.
+          isBlocking bool
+      }
+      #+end_src
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Init(net%20string,%20pollable%20bool)%20error%20{][func (fd *FD) Init(net string, pollable bool) error {]]
+       Initialize the FD. 
+
+       This can be called multiple times on a single FD
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20destroy()%20error%20{][func (fd *FD) destroy() error {]]
+       Closes the FD. Called when there're no remaining references. 
+
+       Note that poller will be firstly closed, then followed by the closing of
+       the actual fd. 
+
+       Lastly, the semaphore ~fd.csema~ will be released
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Close()%20error%20{][func (fd *FD) Close() error {]]
+       Closes the FD. The underlying file descriptor is closed by the ~destroy~
+       method when there're no remaining references. 
+
+       1) Firstly, close mutex and signal all semaphores blocked at the file
+       2) Unblock any I/O via ~fd.pd.evict()~
+       3) Decrese reference to this FD (as it's increamented in step 1)
+       4) Lastly, blocking wait until the FD is finally closed (whether in the
+          ~fd.decref~ in this method, or in other unlock methods).
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Shutdown(how%20int)%20error%20{][func (fd *FD) Shutdown(how int) error {]]
+       Call ~syscall.Shutdown~ to actually shutdown the FD within protection of
+       ref counters
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20SetBlocking()%20error%20{][func (fd *FD) SetBlocking() error {]]
+       Making the underlying FD blocking, within protection of ref counters
+
+
+       *Misc ref/locking related methods defined in fd_mutex.go*
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20incref()%20error%20{][func (fd *FD) incref() error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20decref()%20error%20{][func (fd *FD) decref() error {]]
+       If the reference becomes 0, close all related resources via ~fd.destroy~
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20readLock()%20error%20{][func (fd *FD) readLock() error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20readUnlock()%20{][func (fd *FD) readUnlock() {]]
+       Similar with ~decref~, if there're no any other references to FD, close
+       all related resources. 
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20writeLock()%20error%20{][func (fd *FD) writeLock() error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(fd%20*FD)%20writeUnlock()%20{][func (fd *FD) writeUnlock() {]]
+       Same as ~readUnlock~
+
+
+       *IO Related Methods*
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Read(p%20%5B%5Dbyte)%20(int,%20error)%20{][func (fd *FD) Read(p {}byte) (int, error)]]
+       Implements io.Reader interface
+
+       1) Acquire read lock
+       2) Call prepareRead to reset polling of fd
+       3) Then, try to read something via ~syscall.Read~ and save to ~p~
+       4) On EAGAIN error and nonblocking case, call ~fd.pd.waitRead~ to wait
+          for fd becoming readable
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Pread(p%20%5B%5Dbyte,%20off%20int64)%20(int,%20error)%20{][func (fd *FD) Pread(p {}byte, off int64) (int, error)]]
+       Wraps the pread system call which read bytes starting with offset 
+
+       Note that this method does not need readLock, as it specifies the offset
+       it is independent from other reads
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20ReadFrom(p%20%5B%5Dbyte)%20(int,%20syscall.Sockaddr,%20error)%20{][func (fd *FD) ReadFrom(p {}byte) (int, syscall.Sockaddr, error) ]]
+       Very similar with ~*FD.Read~ method, with minor difference in the
+       underlying syscall, i.e., changed from ~syscall.Read~ to ~syscall.Recvfrom~
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20ReadMsg(p%20%5B%5Dbyte,%20oob%20%5B%5Dbyte)%20(int,%20int,%20int,%20syscall.Sockaddr,%20error)%20{][func (fd *FD) ReadMsg(p {}byte, oob {}byte) (int, int, int, syscall.Sockaddr, error)]]
+       Similar to ~*FD.ReadFrom~ method, change ~syscall.Recvfrom~ to ~syscall.Recvmsg~
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Write(p%20%5B%5Dbyte)%20(int,%20error)%20{][func (fd *FD) Write(p {}byte) (int, error)]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Pwrite(p%20%5B%5Dbyte,%20off%20int64)%20(int,%20error)%20{][func (fd *FD) Pwrite(p {}byte, off int64) (int, error)]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20WriteTo(p%20%5B%5Dbyte,%20sa%20syscall.Sockaddr)%20(int,%20error)%20{][func (fd *FD) WriteTo(p {}byte, sa syscall.Sockaddr) (int, error)]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20WriteMsg(p%20%5B%5Dbyte,%20oob%20%5B%5Dbyte,%20sa%20syscall.Sockaddr)%20(int,%20int,%20error)%20{][func (fd *FD) WriteMsg(p {}byte, oob {}byte, sa syscall.Sockaddr) (int, int, error)]]
+       All methods above are similar to their corresponding read part
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Accept()%20(int,%20syscall.Sockaddr,%20string,%20error)%20{][func (fd *FD) Accept() (int, syscall.Sockaddr, string, error) {]]
+       Similar to ~*FD.Read~ method, but wraps ~accept~ function, which marks
+       the returned file descriptor as nonblocking and close-on-exec
+
+       As Accept is kind of *read* method, we're using ~fd.readLock~ in this
+       method. 
+       
+       [[file:/usr/local/go/src/internal/poll/sys_cloexec.go::func%20accept(s%20int)%20(int,%20syscall.Sockaddr,%20string,%20error)%20{][func accept(s int) (int, syscall.Sockaddr, string, error) {]]
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Seek(offset%20int64,%20whence%20int)%20(int64,%20error)%20{][func (fd *FD) Seek(offset int64, whence int) (int64, error) {]]
+       Simple wraps of syscall.Seek, within protection of ref count
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20ReadDirent(buf%20%5B%5Dbyte)%20(int,%20error)%20{][func (fd *FD) ReadDirent(buf {}byte) (int, error)]]
+       Wraps ~syscall.ReadDirent~
+
+       Note that this is treated like an ordinary system call, rather than a
+       call that tries to fill the buffer
+
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Fchdir()%20error%20{][func (fd *FD) Fchdir() error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20Fstat(s%20*syscall.Stat_t)%20error%20{][func (fd *FD) Fstat(s *syscall.Stat_t) error {]]
+
+       Functions below invokes the user defined function f for
+       control/read/write operation 
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawControl(f%20func(uintptr))%20error%20{][func (fd *FD) RawControl(f func(uintptr)) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawRead(f%20func(uintptr)%20bool)%20error%20{][func (fd *FD) RawRead(f func(uintptr) bool) error {]]
+****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawWrite(f%20func(uintptr)%20bool)%20error%20{][func (fd *FD) RawWrite(f func(uintptr) bool) error {]]
