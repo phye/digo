@@ -1215,3 +1215,83 @@
        by the poller. 
 
        FIXME: Why this function does not require ~runtimeCtx~ ???
+
+*** fd_mutex.go
+**** Types
+***** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::type%20fdMutex%20struct%20{][type fdMutex struct {]]
+      #+begin_src go
+      type fdMutex struct {
+          state uint64
+          rsema uint32
+          wsema uint32
+      }
+      #+end_src
+
+      ~fdMutex.state~ is organized as (numbers in [ ] is bit indices, starting
+      from 0):
+
+      20 bits [63-44]: number of outstanding write waiters
+      20 bits [43-24]: number of outstanding read waiters
+      20 bits [23-4]: total number of references (read+write+misc)
+      1 bit [ 3 ]: lock for misc operations 
+      1 bit [ 2 ]: lock for write operations
+      1 bit [ 1 ]: lock for read operations 
+      1 bit [ 0 ]: whether FD is closed, if set all subsequent lock operations
+      will fail
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20incref()%20bool%20{][func (mu *fdMutex) incref() bool {]]
+       Reports whether mu is available for reading or writing
+       
+       1) read old value *atomically*
+       2) then mutexRef (which is 0x8, i.e., 1 << 3) to get new value. 
+       3) *Atomically* compare the value at ~mu.state~ with old value
+          - if the same, *atomically* swapped new value with that stored at
+            ~mu.state~ and return true, i.e., *we've successfully incremented
+            the references*, 
+          - otherwise, i.e., not the same, some other goroutine has increased
+            the references, go over step 1) to 3) again until we managed to
+            increase the references
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20increfAndClose()%20bool%20{][func (mu *fdMutex) increfAndClose() bool {]]
+       Sets the state of mu to closed. Returns false if the file was already
+       closed. 
+
+       Similar steps with ~incref~, with additional steps to release read and
+       write semaphores. 
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20decref()%20bool%20{][func (mu *fdMutex) decref() bool {]]
+       Reverse operation of ~incref~, similar logic except the way to calculate
+       new value
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20rwlock(read%20bool)%20bool%20{][func (mu *fdMutex) rwlock(read bool) bool {]]
+       Adds a reference to mu and locks mu. 
+
+       *Reports whether mu is available for reading or writing*
+
+       Detailed logic is:
+       1) read old value in ~mu.state~ *atomically*
+       2) If mutex is already closed, return false directly
+       3) Check if mutexBit in old value is set(different bit for read and
+          write)
+          - If not, set mutexBit and add a mutexRef to get new value
+          - Else, add corresponding mutexWait to old value to get new value,
+            meaning that one is waiting
+       4) Lastly, *atomically* check old value and that stored in ~mu.state~
+          - If the same, atomically swap old value with new value.
+
+            - If mutexBit in old value is not set, i.e., mutex not locked 
+              return true, indicating that lock acquired successfully
+
+            - Otherwise, lock is held by others, call ~runtime_Semacquire~ to
+              try to acquire the semaphore. (if semaphore is less than 0, the
+              calling thread will block)
+
+          - Otherwise, repeat step 1) to step 4) until either the lock is
+            closed, or we managed to lock it
+
+****** [[file:/usr/local/go/src/internal/poll/fd_mutex.go::func%20(mu%20*fdMutex)%20rwunlock(read%20bool)%20bool%20{][func (mu *fdMutex) rwunlock(read bool) bool {]]
+       Removes a reference from mu and unlocks mu
+
+       *Reports whether there is no remaining reference*
+
+
