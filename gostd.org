@@ -1434,3 +1434,82 @@
 ****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawControl(f%20func(uintptr))%20error%20{][func (fd *FD) RawControl(f func(uintptr)) error {]]
 ****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawRead(f%20func(uintptr)%20bool)%20error%20{][func (fd *FD) RawRead(f func(uintptr) bool) error {]]
 ****** [[file:/usr/local/go/src/internal/poll/fd_unix.go::func%20(fd%20*FD)%20RawWrite(f%20func(uintptr)%20bool)%20error%20{][func (fd *FD) RawWrite(f func(uintptr) bool) error {]]
+
+* runtime
+** netpoll_epoll.go
+*** Variables
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::epfd%20int32%20%3D%20-1%20/%20epoll%20descriptor][epfd int32 = -1 / epoll descriptor]]
+     Inited via ~netpollinit~
+
+*** Functions
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::func%20netpollinit()%20{][func netpollinit() {]]
+     Init ~epfd~ via ~epollcreate1~ or ~epollcreate~ system call with O_CLOEXEC
+     flag set
+
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::func%20netpolldescriptor()%20uintptr%20{][func netpolldescriptor() uintptr {]]
+     Return epfd
+
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::func%20netpollopen(fd%20uintptr,%20pd%20*pollDesc)%20int32%20{][func netpollopen(fd uintptr, pd *pollDesc) int32 {]]
+     Register ~fd~ to ~epfd~ for io notify, with EPOLLIN, EPOLLOUT, EPOLLRDHUP
+     and EPOLLET events. 
+
+     Recall the struct of ~epoll_event~ and ~epoll_data~ in Linux:
+
+     #+begin_src c
+     typedef union epoll_data {
+         void *ptr;
+         int fd;
+         uint32_t u32;
+         uint64_t u64;
+     } epoll_data_t;
+
+     struct epoll_event {
+         uint32_t events;
+         epoll_data_t data;
+     }
+     #+end_src
+
+     Within ~netpollopen~ function, the interesting events are:
+     ~EPOLLIN, EPOLLOUT, EPOLLRDHUP, EPOLLET~. 
+
+     (Note that, ~EPOLLRDHUP~ is especially useful for writing simple code to
+     detect peer shutdown when using Edge Triggered monitoring) 
+
+     Within epollevent struct, the data field is set as follows:
+
+     #+begin_src go
+     *(**pollDesc)(unsafe.Pointer(&ev.data)) = pd
+     #+end_src
+
+     In detail: 
+     1) Convert &ev.data to a pointer (which should normally be void** in C)
+     2) Convert the pointer to ~**pollDesc~
+     3) Lastly, save pd to to *ptr
+
+     The equivalent code (if C struct field can be assigned a GO pointer) should
+     be:
+     
+     #+begin_src go
+     ev.data = pd
+     #+end_src
+
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::func%20netpollclose(fd%20uintptr)%20int32%20{][func netpollclose(fd uintptr) int32 {]]
+     Remove ~fd~ from ~epfd~ interesting list
+
+**** [[file:/usr/local/go/src/runtime/netpoll_epoll.go::func%20netpoll(block%20bool)%20*g%20{][func netpoll(block bool) *g {]]
+     Polls for ready network connections
+     Returns list of goroutines that become runnable
+
+     If ~block~ is false, the ~epollwait~ system call will be passed a 0 for
+     waitms, and thus will return directly, with or without events available. 
+
+     The detailed logic is:
+
+     1) Declare an ~epollevent~ array 128 entries, and a default 0xffffffff wait
+        ms 
+     2) Call ~epollwait~ system call to blocking wait until any of the
+        underlying fds become readable/writable
+     3) On ~epollwait~ return, we have events available. Loop through the events
+        returned, and call platform independent function ~netpollready~ to
+        mark certain goroutines as runnable
+     4) Lastly, return the runnable goroutines
