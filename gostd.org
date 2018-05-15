@@ -1513,3 +1513,162 @@
         returned, and call platform independent function ~netpollready~ to
         mark certain goroutines as runnable
      4) Lastly, return the runnable goroutines
+
+** netpoll.go
+   Integrated network poller (platform-independent part)
+
+   A particular implementation (epoll/kqueue) must define the following
+   functions:
+   #+begin_src go
+   // to initialize the poller
+   func netpollinit()              
+   // to arm edge-triggered notifications and associate fd with pd
+   func netpollopen(fd uintptr, pd *pollDesc) int
+   #+end_src
+
+   An implementation must call the following function to denote that the pd is
+   ready. 
+   #+begin_src go
+   func netpollready(gpp **g, pd *pollDesc, mode int32)
+   #+end_src
+
+*** Variables and Constants
+    
+**** Binary Semaphores related
+     #+begin_src go
+     const (
+         pdReady uintptr = 1
+         pdWait uintptr = 2
+     )
+     #+end_src
+
+**** Misc
+     ~pollBlockSize = 4 * 1024~
+
+**** Poll related 
+     #+begin_src go
+     var (
+         netpollInited uint32
+         pollcache pollCache
+         netpollWaiters uint32
+     )     
+     #+end_src
+
+*** Types
+**** [[file:/usr/local/go/src/runtime/netpoll.go::type%20pollDesc%20struct%20{][type pollDesc struct {]]
+     pollDesc contains 2 binary semaphores, rg and wg, to park reader and writer
+     goroutines respectively. The semaphores can be in the following states:
+
+     - pdReady :: io readiness notification is pending;
+                  a goroutine consumes the notification by changing the state to
+                  nil
+     - pdWait :: a goroutine prepares to park on the semaphore, but not yet
+                 parked.
+     - G pointer :: the goroutine is blocked on the semaphore
+     - nil :: nothing above
+
+     #+begin_src go
+     type pollDesc struct {
+         link *pollDesc // in pollcache, protected by pollcache.lock
+
+         // The lock protects pollOpen, pollSetDeadline, pollUnblock and deadlineimpl operations.
+         // This fully covers seq, rt and wt variables. fd is constant throughout the PollDesc lifetime.
+         // pollReset, pollWait, pollWaitCanceled and runtime·netpollready (IO readiness notification)
+         // proceed w/o taking the lock. So closing, rg, rd, wg and wd are manipulated
+         // in a lock-free way by all operations.
+         // NOTE(dvyukov): the following code uses uintptr to store *g (rg/wg),
+         // that will blow up when GC starts moving objects.
+         lock    mutex // protects the following fields
+         fd      uintptr
+         closing bool
+         seq     uintptr // protects from stale timers and ready notifications
+         rg      uintptr // pdReady, pdWait, G waiting for read or nil
+         rt      timer   // read deadline timer (set if rt.f != nil)
+         rd      int64   // read deadline
+         wg      uintptr // pdReady, pdWait, G waiting for write or nil
+         wt      timer   // write deadline timer
+         wd      int64   // write deadline
+         user    uint32  // user settable cookie
+     }
+     #+end_src
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::type%20pollCache%20struct%20{][type pollCache struct {]]
+     pollCache maintains the pollDesc list with lock
+     
+     NOTE: ~pollCache~ is a simply list which inserts freed objects before the
+     list head 
+
+     #+begin_src go
+     type pollCache struct {
+         lock  mutex
+         first *pollDesc
+         // PollDesc objects must be type-stable,
+         // because we can get ready notification from epoll/kqueue
+         // after the descriptor is closed/reused.
+         // Stale notifications are detected using seq variable,
+         // seq is incremented when deadlines are changed or descriptor is reused.
+     }
+     #+end_src
+
+***** [[file:/usr/local/go/src/runtime/netpoll.go::func%20(c%20*pollCache)%20free(pd%20*pollDesc)%20{][func (c *pollCache) free(pd *pollDesc) {]]
+      Insert pd before c.first
+
+***** [[file:/usr/local/go/src/runtime/netpoll.go::func%20(c%20*pollCache)%20alloc()%20*pollDesc%20{][func (c *pollCache) alloc() *pollDesc {]]
+      Alloc pollDescs(If necessary) and return the first one
+
+      Note that the steps below are all protected by ~c.lock~
+      1) Check if c.first is nil or not, if yes
+         1) Allocate n*sizeof(pollDesc) bytes *persistent* memory
+         2) Init every ~pollDesc~ from the allocated memory and insert every
+            inited ~pollDesc~ to pollCache
+      2) Otherwise
+         Return the first ~pollDesc~ from the cache and maintain the list
+
+*** Functions
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20poll_runtime_pollServerInit()%20{][func poll_runtime_pollServerInit() {]]
+     Init underlying poll fd via ~netpollinit~ and update ~netpollInited~
+     atomically 
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20netpollinited()%20bool%20{][func netpollinited() bool {]]
+     Return if poll server is already inited atomically
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20poll_runtime_pollServerDescriptor()%20uintptr%20{][func poll_runtime_pollServerDescriptor() uintptr {]]
+     Return epoll fd
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20poll_runtime_pollOpen(fd%20uintptr)%20(*pollDesc,%20int)%20{][func poll_runtime_pollOpen(fd uintptr) (*pollDesc, int) {]]
+     Register fd with a newly allocated pollDesc with the underlying epoll fd 
+
+     1) Firstly, alloc one ~pollDesc~ from ~pollCache~
+     2) Check and initialize fields in ~pollDesc~. Pay special attention to the
+        *seq* field, which is used to protect stale notification
+     3) Lastly, register ~pollDesc~ to the underlying epoll fd via ~netpollopen~
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20poll_runtime_pollClose(pd%20*pollDesc)%20{][func poll_runtime_pollClose(pd *pollDesc) {]]
+     Check and remove pd (and the corresponding fd) from epoll interesting poll 
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20poll_runtime_pollReset(pd%20*pollDesc,%20mode%20int)%20int%20{][func poll_runtime_pollReset(pd *pollDesc, mode int) int {]]
+     Reset pd.rg/pd.wg to 0 per ~mode~ with protection check
+
+
+     
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20netpollblock(pd%20*pollDesc,%20mode%20int32,%20waitio%20bool)%20bool%20{][func netpollblock(pd *pollDesc, mode int32, waitio bool) bool {]]
+     returns true if IO is ready, or false if timedout or closed 
+     waitio - wait only for completed IO, ignore errors
+     
+     1) Check if ~*gpp~ is already pdReady
+        - if yes, set ~*gpp~ to 0 and return
+     2) Continue to check if ~*gpp~ is 0
+        - if not, panic with "runtime: double wait"
+     3) Atomically check if ~*gpp~ is still 0 and set ~*gpp~ to ~pdWait~. If the
+        atomic check passed, break from the 1)-3) loop
+     4) ~*gpp~ has been atomically changed from 0 to ~pdWait~
+        
+
+**** [[file:/usr/local/go/src/runtime/netpoll.go::func%20netpollblockcommit(gp%20*g,%20gpp%20unsafe.Pointer)%20bool%20{][func netpollblockcommit(gp *g, gpp unsafe.Pointer) bool {]]
+     Atomically check and change ~*gpp~ from ~pdWait~ to ~gp~
+
+     Also, when check passed, the package level variable ~netpollWaiters~ will
+     be increamented 
+     
+     Return true if check passed (i.e., the old value is pdWait). Otherwise,
+     return false
